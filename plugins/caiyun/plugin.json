@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "lumin.caiyun",
+  "name": "彩云小译（Pot 移植）",
+  "version": "1.0.0",
+  "author": "TechDecryptor（原作） / Lumin（Go 移植）",
+  "description": "复现 Pot 彩云插件的客户端翻译接口。默认无需配置；接口可用性取决于彩云服务，支持中英日韩法西俄语。",
+  "capabilities": ["translate"],
+  "entrypoints": {"linux/amd64": "bin/plugin"},
+  "settings": [
+    {"key": "token", "label": "自定义 Token（可选，不含 token 前缀）", "secret": true},
+    {"key": "device_id", "label": "自定义设备 ID（可选）"}
+  ]
+}

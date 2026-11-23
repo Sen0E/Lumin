@@ -53,6 +53,8 @@ func Handler(token string, enqueue func(Action) error) http.Handler {
 			}
 		case "/input_translate":
 			a.Kind = "input"
+		case "/ocr_recognize", "/ocr_translate":
+			a.Kind = strings.TrimPrefix(r.URL.Path, "/")
 		case "/config":
 			a.Kind = "config"
 		default:

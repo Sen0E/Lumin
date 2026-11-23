@@ -1,0 +1,10 @@
+{
+ "schema":1,
+ "id":"example.tesseract",
+ "name":"Tesseract 示例插件",
+ "version":"1.0.0",
+ "author":"Lumin",
+ "description":"调用本机 Tesseract，需预先安装对应语言包。",
+ "capabilities":["recognize"],
+ "entrypoints":{"linux/amd64":"bin/plugin"}
+}

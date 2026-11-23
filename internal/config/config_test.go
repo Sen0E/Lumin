@@ -44,3 +44,28 @@ func TestCloneIsIndependent(t *testing.T) {
 		t.Fatal("draft modified live config")
 	}
 }
+
+func TestPluginConfigAndNestedClone(t *testing.T) {
+	cfg := Default()
+	cfg.Providers = []Provider{{ID: "one", Name: "Plugin", Kind: "plugin", Enabled: true, Plugin: "test.translate@1.0.0", Settings: map[string]string{"token": "saved"}}}
+	cfg.OCRPlugin = "test.ocr@1.0.0"
+	cfg.OCRSettings = map[string]string{"model": "saved"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	draft := cfg.Clone()
+	draft.Providers[0].Settings["token"] = "draft"
+	draft.OCRSettings["model"] = "draft"
+	if cfg.Providers[0].Settings["token"] != "saved" || cfg.OCRSettings["model"] != "saved" {
+		t.Fatal("draft aliases saved settings")
+	}
+	draft.ScreenshotShortcut = draft.InputShortcut
+	if err := draft.Validate(); err == nil {
+		t.Fatal("duplicate capture shortcut accepted")
+	}
+	draft = cfg.Clone()
+	draft.Providers[0].Plugin = "../unsafe@1.0.0"
+	if err := draft.Validate(); err == nil {
+		t.Fatal("invalid plugin ref accepted")
+	}
+}

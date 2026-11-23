@@ -19,12 +19,18 @@ func TestRequestBoundary(t *testing.T) {
 		{"invalid utf8", "POST", "/translate", string([]byte{255}), "Bearer secret", "", 400},
 		{"method", "GET", "/translate", "hello", "Bearer secret", "", 405},
 		{"unknown", "POST", "/unknown", "", "Bearer secret", "", 404},
+		{"screenshot OCR", "POST", "/ocr_recognize", "", "Bearer secret", "", 202},
+		{"screenshot translate", "POST", "/ocr_translate", "", "Bearer secret", "", 202},
+		{"screenshot unauthorized", "POST", "/ocr_translate", "", "", "", 401},
 		{"open settings", "POST", "/config", "", "Bearer secret", "", 202},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			h := Handler("secret", func(a Action) error {
 				calls++
+				if strings.HasPrefix(tc.path, "/ocr_") && a.Kind != strings.TrimPrefix(tc.path, "/") {
+					t.Error("incorrect screenshot action")
+				}
 				if tc.path == "/translate" && a.Text != tc.body {
 					t.Error("body changed")
 				}

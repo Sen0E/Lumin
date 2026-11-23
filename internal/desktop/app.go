@@ -4,35 +4,58 @@ package desktop
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"image"
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo/ui"
+
+	"lumin/internal/capture"
 	"lumin/internal/config"
 	"lumin/internal/domain"
 	"lumin/internal/ocr"
-	"lumin/internal/provider"
+	"lumin/internal/plugin"
 	"lumin/internal/storage"
 	"lumin/internal/translation"
 )
 
 // Ports isolates OS operations and the event-loop dispatcher for deterministic tests.
 type Ports struct {
-	Translators    func(config.Config) []domain.Translator
-	Dispatch       func(func())
-	ReadClipboard  func() string
-	WriteClipboard func(string)
-	ChooseImage    func() (string, error)
-	ApplyConfig    func(config.Config) error
+	CaptureArea     func(context.Context) (image.Image, error)
+	Plugins         *plugin.Manager
+	ChoosePlugin    func() (string, error)
+	Translators     func(config.Config) []domain.Translator
+	Dispatch        func(func())
+	ReadClipboard   func() string
+	WriteClipboard  func(string)
+	ChooseImage     func() (string, error)
+	ApplyConfig     func(config.Config) error
+	ShowPreferences func()
+	ShowTranslator  func()
+	HideTranslator  func()
+	Quit            func()
 }
 
 type App struct {
+	probe                             serviceProbe
+	probeGeneration                   uint64
+	probeCancel                       context.CancelFunc
+	preferences                       preferencesEditor
+	installed                         []plugin.Manifest
+	pluginBusy                        bool
+	confirmUninstall                  string
+	pluginEditors                     map[string]*string
 	store                             *storage.Store
 	ports                             Ports
 	ocr                               ocr.Recognizer
 	settings                          config.Config
 	draft                             config.Config
 	page                              string
+	translationPage                   string
+	input                             ui.Handle
+	focusInput                        bool
 	text, source, target              string
 	results                           []domain.Result
 	history                           []domain.Entry
@@ -52,15 +75,39 @@ type App struct {
 
 func New(store *storage.Store, cfg config.Config, history []domain.Entry, ports Ports) *App {
 	ctx, stop := context.WithCancel(context.Background())
-	return &App{store: store, ports: ports, ocr: ocr.Tesseract{}, settings: cfg.Clone(), draft: cfg.Clone(),
-		page: "翻译", source: domain.LanguageName(cfg.Source), target: domain.LanguageName(cfg.Target), selectedProvider: "compatible",
+	a := &App{store: store, ports: ports, ocr: ocr.Tesseract{}, settings: cfg.Clone(), draft: cfg.Clone(),
+		page: "设置", translationPage: "翻译", source: domain.LanguageName(cfg.Source), target: domain.LanguageName(cfg.Target), selectedProvider: "compatible",
 		history: history, root: ctx, stop: stop, status: "准备就绪"}
+	a.syncPreferences()
+	return a
 }
 
-func (a *App) Close()           { a.closed = true; a.Cancel(); a.stop() }
-func (a *App) Notice(s string)  { a.status = s }
-func (a *App) ShowSettings()    { a.page = "设置" }
-func (a *App) ShowTranslation() { a.page = "翻译" }
+func (a *App) Close()          { a.closed = true; a.cancelProbe(); a.Cancel(); a.stop() }
+func (a *App) Notice(s string) { a.status = s }
+func (a *App) ShowSettings()   { a.openPreferences("设置") }
+
+func (a *App) openPreferences(page string) {
+	a.page = page
+	if a.ports.ShowPreferences != nil {
+		a.ports.ShowPreferences()
+	}
+}
+
+func (a *App) ShowTranslation() {
+	a.translationPage = "翻译"
+	a.focusInput = true
+	if a.ports.ShowTranslator != nil {
+		a.ports.ShowTranslator()
+	}
+}
+
+// DismissTranslation ends the current interaction without shutting down the app.
+func (a *App) DismissTranslation() {
+	a.Cancel()
+	if a.ports.HideTranslator != nil {
+		a.ports.HideTranslator()
+	}
+}
 
 // post guards callbacks that were queued just before the window closed.
 func (a *App) post(fn func()) {
@@ -88,11 +135,12 @@ func (a *App) sourceChanged() { a.Cancel(); a.results = nil }
 func (a *App) TranslateText(text string) {
 	a.sourceChanged()
 	a.text = text
-	a.page = "翻译"
+	a.ShowTranslation()
 	a.Translate()
 }
 
 func (a *App) Paste(translate bool) {
+	a.ShowTranslation()
 	if a.ports.ReadClipboard == nil {
 		return
 	}
@@ -103,7 +151,6 @@ func (a *App) Paste(translate bool) {
 	}
 	a.sourceChanged()
 	a.text = text
-	a.page = "翻译"
 	if translate {
 		a.Translate()
 	}
@@ -145,18 +192,9 @@ func (a *App) Translate() {
 		return
 	}
 	cfg := a.settings.Clone()
-	var providers []domain.Translator
-	for _, p := range cfg.Providers {
-		if p.Enabled {
-			providers = append(providers, provider.New(p, time.Duration(cfg.TimeoutSeconds)*time.Second))
-		}
-	}
-	if a.ports.Translators != nil {
-		providers = a.ports.Translators(cfg)
-	}
+	providers := a.translators(cfg)
 	if len(providers) == 0 {
 		a.status = "请先在「翻译服务」中配置并启用至少一个服务"
-		a.page = "翻译服务"
 		return
 	}
 	a.Cancel()
@@ -253,9 +291,13 @@ func (a *App) saveSettings() {
 		a.status = err.Error()
 		return
 	}
+	a.cancelProbe()
 	a.saving = true
 	go func() {
-		err := a.store.SaveConfig(cfg)
+		err := a.validatePlugins(cfg)
+		if err == nil {
+			err = a.store.SaveConfig(cfg)
+		}
 		a.post(func() {
 			a.saving = false
 			if err != nil {
@@ -274,23 +316,52 @@ func (a *App) saveSettings() {
 	}()
 }
 
-func (a *App) recognizeImage() {
-	if a.ports.ChooseImage == nil {
+func (a *App) recognizeImage() { a.recognize(false, false) }
+
+func (a *App) Screenshot(translate bool) { a.recognize(true, translate) }
+
+func (a *App) recognize(screenshot, translate bool) {
+	if a.busy {
+		return
+	}
+	if screenshot && a.ports.CaptureArea == nil || !screenshot && a.ports.ChooseImage == nil {
+		a.status = "图片获取接口不可用"
 		return
 	}
 	a.Cancel()
 	a.busy = true
 	a.status = "选择图片…"
 	gen := a.generation
-	languages := a.settings.OCRLanguages
+	cfg := a.settings.Clone()
+	recognizer := a.ocr
+	if cfg.OCRPlugin != "" {
+		recognizer = plugin.Recognizer{Manager: a.ports.Plugins, Ref: cfg.OCRPlugin, Settings: cfg.OCRSettings}
+	}
+	if screenshot {
+		a.status = "正在获取屏幕，请框选需要识别的区域…"
+	}
 	ctx, cancel := context.WithTimeout(a.root, 90*time.Second)
 	a.cancel = cancel
 	go func() {
 		defer cancel()
-		path, err := a.ports.ChooseImage()
+		var path string
+		var err error
+		if screenshot {
+			var img image.Image
+			img, err = a.ports.CaptureArea(ctx)
+			if err == nil {
+				var cleanup func()
+				path, cleanup, err = capture.TempPNG(img)
+				if cleanup != nil {
+					defer cleanup()
+				}
+			}
+		} else {
+			path, err = a.ports.ChooseImage()
+		}
 		var text string
 		if err == nil && path != "" && ctx.Err() == nil {
-			text, err = a.ocr.Recognize(ctx, path, languages)
+			text, err = recognizer.Recognize(ctx, path, cfg.OCRLanguages)
 		}
 		if err == nil {
 			err = ctx.Err()
@@ -302,14 +373,21 @@ func (a *App) recognizeImage() {
 			a.busy, a.cancel = false, nil
 			if err != nil {
 				a.status = err.Error()
+				if screenshot && !errors.Is(err, capture.ErrCanceled) && !errors.Is(err, context.Canceled) {
+					a.ShowTranslation()
+				}
 				return
 			}
 			if path == "" {
 				a.status = "已取消图片选择"
 				return
 			}
-			a.text, a.page, a.results = text, "翻译", nil
+			a.text, a.results = text, nil
+			a.ShowTranslation()
 			a.status = "文字识别完成，可编辑后翻译"
+			if translate {
+				a.Translate()
+			}
 		})
 	}()
 }

@@ -51,22 +51,46 @@ func click(t *testing.T, tt *ui.Tester, label string) {
 func TestNavigationTypingAndClipboard(t *testing.T) {
 	a, _ := testApp(t)
 	a.ports.ReadClipboard = func() string { return "来自剪贴板" }
-	tt := ui.NewTester(a.View, 1100, 800)
+	preferencesOpened := 0
+	a.ports.ShowPreferences = func() { preferencesOpened++ }
+	a.draft.Providers[0].Name = "未保存的配置"
+	main := ui.NewTester(a.View, 1100, 800)
+	tt := ui.NewTester(a.TranslationView, 520, 620)
 	click(t, tt, "待翻译文本")
 	tt.Type("Hello 世界")
 	if a.text != "Hello 世界" {
 		t.Fatalf("lost input %q", a.text)
 	}
 	click(t, tt, "翻译文本")
-	if a.page != "翻译服务" {
-		t.Fatal("unconfigured translation did not guide to settings")
+	if preferencesOpened != 0 || a.page != "设置" || !strings.Contains(a.status, "请先") {
+		t.Fatal("unconfigured translation must explain the problem in the small window")
 	}
-	for _, page := range []string{"设置", "历史记录", "生词本", "翻译", "翻译服务", "翻译"} {
+	click(t, tt, "配置翻译服务")
+	main.Frame()
+	if preferencesOpened != 1 || a.page != "翻译服务" {
+		t.Fatal("configuration link did not open preferences")
+	}
+	for _, page := range []string{"历史记录", "生词本", "翻译"} {
 		click(t, tt, page)
 		tt.Frame()
 		tt.Frame()
-		if a.page != page {
-			t.Fatalf("page %s", a.page)
+		main.Frame()
+		if a.translationPage != page || a.page != "翻译服务" {
+			t.Fatal("window navigation leaked")
+		}
+	}
+	for _, page := range pages {
+		click(t, main, page)
+		main.Frame()
+		main.Frame()
+		tt.Frame()
+		if a.page != page || a.translationPage != "翻译" {
+			t.Fatal("preferences changed translation navigation")
+		}
+		for _, text := range main.Texts() {
+			if text == "历史记录" || text == "翻译文本" || text == "截图翻译" || text == "粘贴" {
+				t.Fatalf("preferences contains translation control %q", text)
+			}
 		}
 	}
 	click(t, tt, "粘贴")
@@ -76,6 +100,9 @@ func TestNavigationTypingAndClipboard(t *testing.T) {
 	click(t, tt, "清空")
 	if a.text != "" {
 		t.Fatal("clear failed")
+	}
+	if a.draft.Providers[0].Name != "未保存的配置" {
+		t.Fatal("draft was lost")
 	}
 }
 
@@ -203,10 +230,10 @@ func TestRenderPages(t *testing.T) {
 			}
 		}
 	}
-	a.page = "翻译"
+	a.translationPage = "翻译"
 	a.text = "Translation helps us understand each other."
 	a.results = []domain.Result{{ProviderID: "one", ProviderName: "Ollama", Text: "翻译帮助我们理解彼此。", DurationMS: 1200}, {ProviderID: "two", ProviderName: "DeepL", Error: "翻译服务返回 HTTP 403，请检查密钥、模型、配额和接口地址"}}
-	tt := ui.NewTester(a.View, 1100, 800)
+	tt := ui.NewTester(a.TranslationView, 520, 620)
 	if !strings.Contains(strings.Join(tt.Texts(), " "), "翻译帮助我们") {
 		t.Fatal("result not rendered")
 	}
@@ -220,8 +247,8 @@ func TestRenderPages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	dark := ui.NewTester(func(c *ui.Context) { c.SetTheme(ui.DarkTheme()); a.View(c) }, 1100, 800)
-	if !dark.HasText("Lumin") {
+	dark := ui.NewTester(func(c *ui.Context) { c.SetTheme(ui.DarkTheme()); a.TranslationView(c) }, 520, 620)
+	if !dark.HasText("翻译") {
 		t.Fatal("dark theme did not render")
 	}
 	if dir := os.Getenv("LUMIN_TEST_SCREENSHOTS"); dir != "" {

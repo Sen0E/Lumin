@@ -1,0 +1,14 @@
+{
+ "schema":1,
+ "id":"example.libretranslate",
+ "name":"LibreTranslate 示例插件",
+ "version":"1.0.0",
+ "author":"Lumin",
+ "description":"使用自建或受信任的 LibreTranslate HTTP 服务。",
+ "capabilities":["translate"],
+ "entrypoints":{"linux/amd64":"bin/plugin"},
+ "settings":[
+  {"key":"endpoint","label":"完整翻译接口地址","default":"http://127.0.0.1:5000/translate","required":true},
+  {"key":"api_key","label":"API Key","secret":true}
+ ]
+}

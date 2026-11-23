@@ -1,0 +1,18 @@
+Lumin Caiyun plugin — Go port
+
+Based on: TechDecryptor/pot-app-translate-plugin-caiyun
+https://github.com/TechDecryptor/pot-app-translate-plugin-caiyun
+Upstream revision: f4b77ce3a5db5c1ac269d742dc00dcfc822575cd (2024-06-23)
+Ported: 2026-11-23
+License: GNU General Public License version 3 (GPL-3.0-only); see LICENSE.
+
+The endpoint, default public client parameters, request structure and language
+mapping are derived from the upstream main.js and info.json. Lumin replaces the
+Pot/Tauri JavaScript entry point with a Go JSON-stdio executable, adds bounded
+HTTP handling, cancellation, validation, optional settings and regression tests.
+No upstream logo is included. This plugin is not an official Caiyun product.
+
+The .luminext package includes corresponding build source under src/ (plugin,
+JSON-stdio SDK, tests and a standalone go.mod). See README.md for rebuilding.
+The plugin and included source are distributed under GPL-3.0-only. This notice
+does not change the licensing of other Lumin components.

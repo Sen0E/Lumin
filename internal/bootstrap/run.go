@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"lumin/internal/config"
 	"lumin/internal/desktop"
 	"lumin/internal/localapi"
+	"lumin/internal/plugin"
 	"lumin/internal/storage"
 )
 
@@ -34,22 +37,38 @@ func Run(icon []byte) error {
 	if err != nil {
 		return fmt.Errorf("加载 %s/config.json：%w", dir, err)
 	}
+	plugins, err := plugin.New(filepath.Join(dir, "plugins"))
+	if err != nil {
+		return err
+	}
 	history, historyErr := store.History()
 	mygo.App.SetName("Lumin")
 	if !mygo.App.RequestSingleInstanceLock() {
 		return nil
 	}
-	var window *mygo.Window
+	var window, translationWindow *mygo.Window
+	var windows windowSet
 	var state *desktop.App
 	var tray *mygo.Tray
 	var server *http.Server
 	var offClipboard func()
 	var closed atomic.Bool
+	var capturing atomic.Bool
 	var pending atomic.Int32
-	show := func() {
-		if window != nil && !closed.Load() {
-			window.Show()
-			window.Focus()
+	// Keep both retained views up to date even when the dispatch window is hidden.
+	dispatch := func(fn func()) {
+		window.Update(func() {
+			if closed.Load() || windows.quitting {
+				return
+			}
+			fn()
+			translationWindow.Invalidate()
+		})
+	}
+	showPreferences := func() {
+		if !closed.Load() && window != nil {
+			windows.show(window)
+			window.Invalidate()
 		}
 	}
 	apply := func(next config.Config) error {
@@ -63,8 +82,9 @@ func Run(icon []byte) error {
 				failures = append(failures, keys+"："+err.Error())
 			}
 		}
-		register(next.InputShortcut, func() { window.Update(func() { state.ShowTranslation() }); show() })
-		register(next.ClipboardShortcut, func() { window.Update(func() { state.Paste(true) }); show() })
+		register(next.InputShortcut, func() { dispatch(state.ShowTranslation) })
+		register(next.ClipboardShortcut, func() { dispatch(func() { state.Paste(true) }) })
+		register(next.ScreenshotShortcut, func() { dispatch(func() { state.Screenshot(true) }) })
 		if next.ServerEnabled != cfg.ServerEnabled || next.ServerAddress != cfg.ServerAddress || next.ServerToken != cfg.ServerToken {
 			failures = append(failures, "外部调用设置将在重启后生效")
 		}
@@ -75,27 +95,67 @@ func Run(icon []byte) error {
 	}
 	mygo.App.WhenReady(func() {
 		state = desktop.New(store, cfg, history, desktop.Ports{
-			Dispatch:      func(fn func()) { window.Update(fn) },
+			Dispatch:        dispatch,
+			ShowPreferences: showPreferences,
+			ShowTranslator: func() {
+				windows.show(translationWindow)
+				translationWindow.Invalidate()
+			},
+			HideTranslator: func() { windows.hideOnClose(translationWindow) },
+			Quit:           mygo.App.Quit,
+			Plugins:        plugins,
+			CaptureArea: func(ctx context.Context) (image.Image, error) {
+				if !capturing.CompareAndSwap(false, true) {
+					return nil, errors.New("正在进行截图")
+				}
+				defer capturing.Store(false)
+				return captureArea(ctx, &windows, &closed)
+			},
+			ChoosePlugin: func() (string, error) {
+				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Title: "安装 Lumin 插件", Filters: []mygo.FileFilter{{Name: "Lumin 插件", Extensions: []string{"luminext", "potext"}}}})
+				if err != nil || len(paths) == 0 {
+					return "", err
+				}
+				return paths[0], nil
+			},
 			ReadClipboard: mygo.Clipboard.ReadText, WriteClipboard: mygo.Clipboard.WriteText,
 			ChooseImage: func() (string, error) {
-				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Title: "选择需要识别的图片", Filters: []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"}}}})
+				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: translationWindow, Title: "选择需要识别的图片", Filters: []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"}}}})
 				if err != nil || len(paths) == 0 {
 					return "", err
 				}
 				return paths[0], nil
 			}, ApplyConfig: apply,
 		})
-		window = mygo.NewWindow(mygo.WindowOptions{Title: "Lumin · 原生翻译", Width: 1100, Height: 800, MinWidth: 920, MinHeight: 680, StateKey: "main", Content: ui.View(state.View)})
-		window.OnClosed(func() { closed.Store(true); state.Close(); mygo.App.Quit() })
-		offClipboard = mygo.Clipboard.OnChanged(func() { window.Update(state.ClipboardChanged) })
+		window = mygo.NewWindow(mygo.WindowOptions{Title: "Lumin · 设置", Width: 1100, Height: 800, MinWidth: 920, MinHeight: 680, StateKey: "preferences", Content: ui.View(state.View)})
+		translationWindow = mygo.NewWindow(mygo.WindowOptions{Title: "Lumin · 翻译", Width: 520, Height: 620, MinWidth: 460, MinHeight: 480, StateKey: "translation", Hidden: true, Content: ui.View(state.TranslationView)})
+		windows.preferences, windows.translator = window, translationWindow
+		state.RefreshPlugins()
+		window.OnClose(func(e *mygo.CloseEvent) {
+			if windows.hideOnClose(window) {
+				e.PreventDefault()
+			}
+		})
+		translationWindow.OnClose(func(e *mygo.CloseEvent) {
+			if windows.hideOnClose(translationWindow) {
+				e.PreventDefault()
+				state.Cancel()
+				window.Invalidate()
+			}
+		})
+		offClipboard = mygo.Clipboard.OnChanged(func() { dispatch(state.ClipboardChanged) })
 		tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, ToolTip: "Lumin 翻译", Menu: mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "打开翻译", Click: func(*mygo.MenuItem, *mygo.Window) { window.Update(state.ShowTranslation); show() }},
-			{Label: "翻译剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { window.Update(func() { state.Paste(true) }); show() }},
-			mygo.Separator(), {Role: mygo.RoleQuit},
+			{Label: "打开翻译", Click: func(*mygo.MenuItem, *mygo.Window) { dispatch(state.ShowTranslation) }},
+			{Label: "翻译剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { dispatch(func() { state.Paste(true) }) }},
+			{Label: "截图识字", Click: func(*mygo.MenuItem, *mygo.Window) { dispatch(func() { state.Screenshot(false) }) }},
+			{Label: "截图翻译", Click: func(*mygo.MenuItem, *mygo.Window) { dispatch(func() { state.Screenshot(true) }) }},
+			mygo.Separator(),
+			{Label: "偏好设置", Click: func(*mygo.MenuItem, *mygo.Window) { dispatch(state.ShowSettings) }},
+			{Label: "退出 Lumin", Role: mygo.RoleQuit},
 		})})
 		var notices []string
 		if err != nil {
-			notices = append(notices, "托盘不可用："+err.Error())
+			notices = append(notices, "托盘不可用；关闭后可重新运行 Lumin 找回设置，或使用快捷键打开翻译："+err.Error())
 		}
 		if err := apply(cfg); err != nil {
 			notices = append(notices, "快捷键："+err.Error())
@@ -117,9 +177,10 @@ func Run(icon []byte) error {
 							pending.Add(-1)
 							return errors.New("busy")
 						}
+						// Always decrement even if a quit started after accepting the request.
 						window.Update(func() {
 							defer pending.Add(-1)
-							if closed.Load() {
+							if closed.Load() || windows.quitting {
 								return
 							}
 							switch action.Kind {
@@ -127,10 +188,13 @@ func Run(icon []byte) error {
 								state.TranslateText(action.Text)
 							case "input":
 								state.ShowTranslation()
+							case "ocr_recognize", "ocr_translate":
+								state.Screenshot(action.Kind == "ocr_translate")
+								return
 							case "config":
 								state.ShowSettings()
 							}
-							show()
+							translationWindow.Invalidate()
 						})
 						return nil
 					}),
@@ -146,8 +210,14 @@ func Run(icon []byte) error {
 			window.Update(func() { state.Notice(strings.Join(notices, "；")) })
 		}
 	})
-	mygo.App.OnSecondInstance(func([]string, string) { show() })
-	mygo.App.OnActivate(func(bool) { show() })
+	mygo.App.OnSecondInstance(func([]string, string) { showPreferences() })
+	mygo.App.OnActivate(func(visible bool) {
+		if !visible && !capturing.Load() {
+			showPreferences()
+		}
+	})
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { windows.quitting = true })
+	mygo.App.OnQuitCanceled(func() { windows.quitting = false })
 	mygo.App.OnQuit(func() {
 		closed.Store(true)
 		if state != nil {

@@ -4,47 +4,54 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"lumin/internal/domain"
+	"lumin/pkg/pluginapi"
 )
 
 const Version = 1
 
 type Provider struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Enabled   bool   `json:"enabled"`
-	Endpoint  string `json:"endpoint"`
-	Model     string `json:"model,omitempty"`
-	APIKey    string `json:"api_key,omitempty"`
-	APIKeyEnv string `json:"api_key_env,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Kind      string            `json:"kind"`
+	Enabled   bool              `json:"enabled"`
+	Endpoint  string            `json:"endpoint"`
+	Model     string            `json:"model,omitempty"`
+	APIKey    string            `json:"api_key,omitempty"`
+	APIKeyEnv string            `json:"api_key_env,omitempty"`
+	Plugin    string            `json:"plugin,omitempty"`
+	Settings  map[string]string `json:"settings,omitempty"`
 }
 
 type Config struct {
-	Version           int        `json:"version"`
-	Source            string     `json:"source"`
-	Target            string     `json:"target"`
-	TimeoutSeconds    int        `json:"timeout_seconds"`
-	HistoryLimit      int        `json:"history_limit"`
-	SaveHistory       bool       `json:"save_history"`
-	Providers         []Provider `json:"providers"`
-	InputShortcut     string     `json:"input_shortcut"`
-	ClipboardShortcut string     `json:"clipboard_shortcut"`
-	ServerEnabled     bool       `json:"server_enabled"`
-	ServerAddress     string     `json:"server_address"`
-	ServerToken       string     `json:"server_token,omitempty"`
-	OCRLanguages      string     `json:"ocr_languages"`
+	Version            int               `json:"version"`
+	Source             string            `json:"source"`
+	Target             string            `json:"target"`
+	TimeoutSeconds     int               `json:"timeout_seconds"`
+	HistoryLimit       int               `json:"history_limit"`
+	SaveHistory        bool              `json:"save_history"`
+	Providers          []Provider        `json:"providers"`
+	InputShortcut      string            `json:"input_shortcut"`
+	ClipboardShortcut  string            `json:"clipboard_shortcut"`
+	ServerEnabled      bool              `json:"server_enabled"`
+	ServerAddress      string            `json:"server_address"`
+	ServerToken        string            `json:"server_token,omitempty"`
+	OCRLanguages       string            `json:"ocr_languages"`
+	ScreenshotShortcut string            `json:"screenshot_shortcut,omitempty"`
+	OCRPlugin          string            `json:"ocr_plugin,omitempty"`
+	OCRSettings        map[string]string `json:"ocr_settings,omitempty"`
 }
 
 func Default() Config {
 	return Config{Version: Version, Source: "auto", Target: "zh", TimeoutSeconds: 60,
 		HistoryLimit: 500, SaveHistory: true, InputShortcut: "CmdOrCtrl+Alt+Space",
-		ClipboardShortcut: "CmdOrCtrl+Alt+T", ServerAddress: "127.0.0.1:60828", OCRLanguages: "eng+chi_sim",
+		ClipboardShortcut: "CmdOrCtrl+Alt+T", ScreenshotShortcut: "CmdOrCtrl+Alt+S", ServerAddress: "127.0.0.1:60828", OCRLanguages: "eng+chi_sim",
 		Providers: []Provider{
 			{ID: "compatible", Name: "兼容 Chat Completions", Kind: "compatible", Endpoint: "https://api.openai.com/v1/chat/completions", APIKeyEnv: "OPENAI_API_KEY"},
 			{ID: "ollama", Name: "Ollama 本地模型", Kind: "ollama", Endpoint: "http://127.0.0.1:11434/api/chat", Model: "qwen2.5:7b"},
@@ -54,7 +61,14 @@ func Default() Config {
 	}
 }
 
-func (c Config) Clone() Config { c.Providers = append([]Provider(nil), c.Providers...); return c }
+func (c Config) Clone() Config {
+	c.Providers = append([]Provider(nil), c.Providers...)
+	for i := range c.Providers {
+		c.Providers[i].Settings = maps.Clone(c.Providers[i].Settings)
+	}
+	c.OCRSettings = maps.Clone(c.OCRSettings)
+	return c
+}
 
 func (c Config) Validate() error {
 	if c.Version != Version {
@@ -82,11 +96,17 @@ func (c Config) Validate() error {
 			return errors.New("翻译服务名称不能为空")
 		}
 		switch p.Kind {
-		case "compatible", "ollama", "deepl", "libretranslate":
+		case "compatible", "ollama", "deepl", "libretranslate", "plugin":
 		default:
 			return fmt.Errorf("未知服务类型 %q", p.Kind)
 		}
 		if !p.Enabled {
+			continue
+		}
+		if p.Kind == "plugin" {
+			if !pluginapi.ValidRef(p.Plugin) {
+				return errors.New("插件服务标识无效")
+			}
 			continue
 		}
 		u, err := url.Parse(p.Endpoint)
@@ -111,8 +131,18 @@ func (c Config) Validate() error {
 			return errors.New("外部调用令牌至少需要 24 个字符")
 		}
 	}
-	if c.InputShortcut != "" && c.InputShortcut == c.ClipboardShortcut {
-		return errors.New("两个全局快捷键不能相同")
+	shortcuts := map[string]bool{}
+	for _, key := range []string{c.InputShortcut, c.ClipboardShortcut, c.ScreenshotShortcut} {
+		if key == "" {
+			continue
+		}
+		if shortcuts[key] {
+			return errors.New("全局快捷键不能相同")
+		}
+		shortcuts[key] = true
+	}
+	if c.OCRPlugin != "" && !pluginapi.ValidRef(c.OCRPlugin) {
+		return errors.New("OCR 插件标识无效")
 	}
 	if strings.TrimSpace(c.OCRLanguages) == "" {
 		return errors.New("OCR 语言不能为空")
