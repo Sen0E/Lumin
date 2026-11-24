@@ -14,13 +14,14 @@ Go 插件入口 → 解码图片并转 RGB → 固定 RapidOCRLite 5.0.0a16 C AB
 
 原生库由插件私有目录加载；Windows 限制 DLL 搜索目录。CPU 模式不需要 GPU 驱动。宿主取消或超时会终止整个插件进程，释放原生模型和线程；当前每次识别创建新进程，未使用常驻模型缓存。没有额外的 180° 方向分类模型，倒置图片需要先旋转。
 
-本版本使用专用 ONNX 解释器 RapidOCRLite，**不是 ONNX Runtime**，不支持任意 ONNX 架构。上游运行库是预发布版本，已锁定下载哈希，升级必须重新跑真实样例。Linux 包仍依赖标准 glibc/libstdc++/libgcc 系统运行库；Windows x64 SDK 仅依赖 KERNEL32.dll。macOS/ARM 构建尚未发布。
+本版本使用专用 ONNX 解释器 RapidOCRLite，**不是 ONNX Runtime**，不支持任意 ONNX 架构。上游运行库是预发布版本，已锁定下载哈希，升级必须重新跑真实样例。Linux 包仍依赖标准 glibc/libstdc++/libgcc 系统运行库；Windows x64 SDK 仅依赖 KERNEL32.dll。构建脚本支持 macOS Apple Silicon（arm64，macOS 14+），采用固定版本的 macOS 原生 SDK；CI 在对应 runner 执行真实识别样例。
 
 ## 构建与维护
 
 ```bash
 python3 scripts/build-ppocr-plugin.py --target linux/amd64
 python3 scripts/build-ppocr-plugin.py --target windows/amd64
+python3 scripts/build-ppocr-plugin.py --target darwin/arm64
 ```
 
 构建机需要 Go、Python 3 标准库和 curl；首次构建下载约定资产，SHA-256 不符立即失败。缓存默认 `build/ppocr-cache`，可用 `--cache` 指定已有离线缓存。Python 不进入运行包。脚本只提取 SDK 中指定文件，从已校验 ONNX 的 metadata_props.character 提取对应字典，避免字典与模型不匹配。
