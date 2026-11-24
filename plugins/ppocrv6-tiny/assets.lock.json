@@ -1,10 +1,26 @@
 {
- "runtime_version": "5.0.0a16",
- "dictionary_sha256": "34d139222b6e8d84830f57476e39f01e76be3baffde3e9df75a079e251140598",
- "assets": {
-  "detection.onnx": {"url":"https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx","sha256":"f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5"},
-  "recognition.onnx": {"url":"https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx","sha256":"e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b"},
-  "sdk-linux.tar.gz": {"url":"https://github.com/RapidAI/RapidOCRLite/releases/download/v5.0.0a16/RapidOCRLite-SDK-linux_x86_64-5.0.0a16.tar.gz","sha256":"bc8572584eb40383aa6c2d94400f70c79ca5c778187093a74dbd1835503f0d62"},
-  "sdk-windows.zip": {"url":"https://github.com/RapidAI/RapidOCRLite/releases/download/v5.0.0a16/RapidOCRLite-SDK-win_amd64-5.0.0a16.zip","sha256":"4dde8e9e316920a49f0308c4f1c6271309bb1e6fb208ecd0aa48a7b760f2b276"}
- }
+  "runtime_version": "5.0.0a16",
+  "dictionary_sha256": "34d139222b6e8d84830f57476e39f01e76be3baffde3e9df75a079e251140598",
+  "assets": {
+    "detection.onnx": {
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx",
+      "sha256": "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5"
+    },
+    "recognition.onnx": {
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx",
+      "sha256": "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b"
+    },
+    "sdk-linux.tar.gz": {
+      "url": "https://github.com/RapidAI/RapidOCRLite/releases/download/v5.0.0a16/RapidOCRLite-SDK-linux_x86_64-5.0.0a16.tar.gz",
+      "sha256": "bc8572584eb40383aa6c2d94400f70c79ca5c778187093a74dbd1835503f0d62"
+    },
+    "sdk-windows.zip": {
+      "url": "https://github.com/RapidAI/RapidOCRLite/releases/download/v5.0.0a16/RapidOCRLite-SDK-win_amd64-5.0.0a16.zip",
+      "sha256": "4dde8e9e316920a49f0308c4f1c6271309bb1e6fb208ecd0aa48a7b760f2b276"
+    },
+    "sdk-macos-arm64.tar.gz": {
+      "url": "https://github.com/RapidAI/RapidOCRLite/releases/download/v5.0.0a16/RapidOCRLite-SDK-macosx_arm64-5.0.0a16.tar.gz",
+      "sha256": "8b2bb9b876b37c3ffe2206aa62470bb6c0a720f9baaad4da3f205bee3b498859"
+    }
+  }
 }

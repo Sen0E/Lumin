@@ -1,14 +1,28 @@
 {
- "schema": 1,
- "id": "lumin.ppocrv6-tiny",
- "name": "PP-OCRv6 tiny 离线识别",
- "version": "1.0.0",
- "author": "Lumin / PaddlePaddle / RapidAI",
- "description": "自带 PP-OCRv6 tiny ONNX 检测、识别模型和 CPU 推理库，无需安装 Python 或 Tesseract。模型自动识别中英文等支持字符；不使用 Tesseract 语言设置。",
- "capabilities": ["recognize"],
- "entrypoints": {"linux/amd64":"bin/plugin", "windows/amd64":"bin/plugin.exe"},
- "settings": [
-  {"key":"threads","label":"CPU 线程数（1–16）","default":"4"},
-  {"key":"max_side","label":"检测最长边（320–2048）","default":"960"}
- ]
+  "schema": 1,
+  "id": "lumin.ppocrv6-tiny",
+  "name": "PP-OCRv6 tiny 离线识别",
+  "version": "1.0.0",
+  "author": "Lumin / PaddlePaddle / RapidAI",
+  "description": "自带 PP-OCRv6 tiny ONNX 检测、识别模型和 CPU 推理库，无需安装 Python 或 Tesseract。模型自动识别中英文等支持字符；不使用 Tesseract 语言设置。",
+  "capabilities": [
+    "recognize"
+  ],
+  "entrypoints": {
+    "linux/amd64": "bin/plugin",
+    "windows/amd64": "bin/plugin.exe",
+    "darwin/arm64": "bin/plugin"
+  },
+  "settings": [
+    {
+      "key": "threads",
+      "label": "CPU 线程数（1–16）",
+      "default": "4"
+    },
+    {
+      "key": "max_side",
+      "label": "检测最长边（320–2048）",
+      "default": "960"
+    }
+  ]
 }
