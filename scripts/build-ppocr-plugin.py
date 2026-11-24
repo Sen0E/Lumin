@@ -119,7 +119,7 @@ def copy_go_licenses(stage, host_env):
     # each pinned module before reading its license; `go list -m` may have no Dir.
     for mod in ['github.com/ebitengine/purego', 'golang.org/x/image', 'golang.org/x/sys']:
         record = json.loads(subprocess.check_output(
-            ['go', 'mod', 'download', '-json', mod], cwd=ROOT, env=host_env, text=True))
+            ['go', 'mod', 'download', '-json', mod], cwd=ROOT, env=host_env, text=True, encoding='utf-8'))
         if record.get('Error') or not record.get('Dir'):
             raise ValueError(f'cannot locate license for {mod}: {record.get("Error", "missing module directory")}')
         source = Path(record['Dir']) / 'LICENSE'
@@ -167,7 +167,7 @@ def main():
         host_env.pop('GOARCH', None)
         # Preserve licenses of the Go libraries linked into the entrypoint.
         copy_go_licenses(stage, host_env)
-        goroot = subprocess.check_output(['go', 'env', 'GOROOT'], env=host_env, text=True).strip()
+        goroot = subprocess.check_output(['go', 'env', 'GOROOT'], env=host_env, text=True, encoding='utf-8').strip()
         go_license = Path(goroot) / 'LICENSE'
         if not go_license.is_file():
             go_license = SOURCE / 'LICENSE-GO'

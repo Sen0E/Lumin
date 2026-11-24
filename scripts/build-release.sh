@@ -16,7 +16,7 @@ resource_platform="${target/\//-}"
 mkdir -p "resources/$resource_platform"
 # Bundle both maintained plugins, reading versions from their manifests.
 for plugin in ppocrv6-tiny caiyun; do
-  ref="$("$python_cmd" -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["id"]+"-"+m["version"])' "plugins/$plugin/plugin.json")"
+  ref="$("$python_cmd" scripts/release.py plugin-ref --plugin "$plugin")"
   bundle="bundled-$plugin.luminext"
   if [[ "$plugin" == ppocrv6-tiny ]]; then bundle="bundled-ocr.luminext"; fi
   cp "build/plugins/$ref-$resource_platform.luminext" "resources/$resource_platform/$bundle"

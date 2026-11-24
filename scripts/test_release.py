@@ -1,6 +1,8 @@
 import importlib.util
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tarfile
 import tempfile
@@ -20,12 +22,24 @@ class ReleaseTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        (self.root / 'mygo.json').write_text('{"version":"1.2.3"}')
-        (self.root / 'CHANGELOG.md').write_text('# Changes\n\n## 1.2.3 — today\n\n- Fixed a bug.\n\n## 1.2.2\nOld notes.\n')
+        (self.root / 'mygo.json').write_text('{"version":"1.2.3"}', encoding="utf-8")
+        (self.root / 'CHANGELOG.md').write_text('# Changes\n\n## 1.2.3 — today\n\n- Fixed a bug.\n\n## 1.2.2\nOld notes.\n', encoding='utf-8')
         for folder, name in [('caiyun', 'lumin.caiyun'), ('ppocrv6-tiny', 'lumin.ppocrv6-tiny')]:
             p = self.root / 'plugins' / folder
             p.mkdir(parents=True)
-            (p / 'plugin.json').write_text(json.dumps({'id': name, 'version': '1.0.0'}))
+            (p / 'plugin.json').write_text(json.dumps({'id': name, 'version': '1.0.0', 'name': '离线识别与翻译'}, ensure_ascii=False), encoding='utf-8')
+
+    def test_plugin_refs_use_explicit_utf8_and_cli(self):
+        self.assertEqual(release.plugin_ref(self.root, 'caiyun'), 'lumin.caiyun-1.0.0')
+        # Disable UTF-8 mode and reject implicit encodings: this fails even on a
+        # UTF-8 Linux host if the CLI accidentally relies on locale defaults.
+        for name in ['caiyun', 'ppocrv6-tiny']:
+            result = subprocess.run(
+                [sys.executable, '-X', 'utf8=0', '-X', 'warn_default_encoding=1',
+                 '-W', 'error::EncodingWarning', str(Path(release.__file__)),
+                 'plugin-ref', '--plugin', name],
+                check=True, capture_output=True, text=True, encoding='utf-8')
+            self.assertEqual(result.stdout.strip(), release.plugin_ref(release.ROOT, name))
 
     def test_prerelease_linux_names_match_mygo_package_versions(self):
         names = release.installer_assets('1.2.3-rc.1-test', 'linux/amd64')
@@ -51,9 +65,9 @@ class ReleaseTests(unittest.TestCase):
             release.finalize(self.root, notes)
         (output / names[-1]).write_bytes(b'plugin')
         release.finalize(self.root, notes)
-        self.assertEqual(len((output / 'SHA256SUMS').read_text().splitlines()), 12)
-        self.assertIn('Fixed a bug.', notes.read_text())
-        self.assertNotIn('Old notes.', notes.read_text())
+        self.assertEqual(len((output / 'SHA256SUMS').read_text(encoding='utf-8').splitlines()), 12)
+        self.assertIn('Fixed a bug.', notes.read_text(encoding='utf-8'))
+        self.assertNotIn('Old notes.', notes.read_text(encoding='utf-8'))
         (output / 'stale-version.exe').write_bytes(b'old')
         with self.assertRaises(ValueError):
             release.finalize(self.root, notes)
@@ -89,13 +103,13 @@ class ReleaseTests(unittest.TestCase):
             module_dir = self.root / 'empty-cache' / mod
             self.assertFalse(module_dir.exists())
             module_dir.mkdir(parents=True)
-            (module_dir / 'LICENSE').write_text('license for ' + mod)
+            (module_dir / 'LICENSE').write_text('license for ' + mod, encoding='utf-8')
             return json.dumps({'Path': mod, 'Dir': str(module_dir)})
         with patch.object(ppocr.subprocess, 'check_output', side_effect=download) as fetch:
             ppocr.copy_go_licenses(stage, {})
         self.assertEqual(fetch.call_count, 3)
         for mod in modules:
-            self.assertEqual((stage / 'licenses' / (mod.replace('/', '-') + '.txt')).read_text(),
+            self.assertEqual((stage / 'licenses' / (mod.replace('/', '-') + '.txt')).read_text(encoding='utf-8'),
                              'license for ' + mod)
 
     def test_go_licenses_reject_missing_module_directory_and_license(self):

@@ -24,6 +24,7 @@ defaults:
 env:
   CGO_ENABLED: '0'
   PYTHON: python
+  PYTHONUTF8: '1'
 
 jobs:
   prepare:
@@ -109,8 +110,9 @@ jobs:
           RELEASE_TARGET: ${{ matrix.target }}
           LUMIN_PPOCR_PACKAGE: ${{ github.workspace }}/resources/${{ matrix.artifact }}/bundled-ocr.luminext
         run: |
-          caiyun_ref="$(python -c 'import json; m=json.load(open("plugins/caiyun/plugin.json")); print(m["id"]+"-"+m["version"])')"
+          caiyun_ref="$(python scripts/release.py plugin-ref --plugin caiyun)"
           export LUMIN_TEST_CAIYUN_PACKAGE="$GITHUB_WORKSPACE/build/plugins/$caiyun_ref-${RELEASE_TARGET/\//-}.luminext"
+          python -m unittest discover -s scripts -p 'test_*.py' -v
           go test ./cmd/lumin-plugin-pack ./internal/ocrsetup ./plugins/ppocrv6-tiny ./internal/plugin -count=1
           python scripts/release.py collect --target "$RELEASE_TARGET"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

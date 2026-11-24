@@ -110,3 +110,6 @@ bash -n scripts/build-release.sh scripts/build-plugins.sh
 - 修改脚本后，先提交并推送修复。Actions 的已有运行和版本标签都指向原提交，直接重跑不会使用 main 上的新代码。推荐更新 mygo.json、界面版本及 CHANGELOG 后创建新版本标签（例如 v0.13.2）；同一提交因网络等临时故障失败才适合直接重跑。手动运行时同样需要填写包含修复的已有标签。
 
 - 报错 `tag vX does not match mygo.json: vY`：标签指向的提交仍是旧版本。只更新 main 或只创建新标签都不够；必须先在源码中完成版本升级并提交，再创建标签。当前工作树版本为 0.13.2；已创建的旧标签不会跟随 main 移动。若标签在 prepare 阶段失败且从未发布 Release，可明确重新指向修复提交后再推送；已有公开 Release 的标签不应移动，应使用新版本。
+
+- Windows 报错 `UnicodeDecodeError: cp1252`：不要依赖系统默认编码读取中文清单。构建脚本和工作流使用 `python scripts/release.py plugin-ref --plugin caiyun`（或 ppocrv6-tiny）读取 UTF-8 清单；工作流额外开启 PYTHONUTF8，Python 发布工具测试也在三个构建平台运行。
+- 插件测试报错「插件入口不能包含符号链接」：管理器先解析存储根目录的真实位置，允许 macOS 临时目录等上层路径别名。已安装插件内部的入口或 bin 目录被换为符号链接仍会拒绝执行；不要通过删除运行时检查来绕过此错误。

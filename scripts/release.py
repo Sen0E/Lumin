@@ -23,12 +23,14 @@ def version(root):
     return value
 
 
+def plugin_ref(root, name):
+    manifest = json.loads((root / 'plugins' / name / 'plugin.json').read_text(encoding='utf-8'))
+    return f'{manifest["id"]}-{manifest["version"]}'
+
+
 def plugin_assets(root, target):
-    names = []
-    for name in ('ppocrv6-tiny', 'caiyun'):
-        manifest = json.loads((root / 'plugins' / name / 'plugin.json').read_text(encoding='utf-8'))
-        names.append(f'{manifest["id"]}-{manifest["version"]}-{target.replace("/", "-")}.luminext')
-    return names
+    return [f'{plugin_ref(root, name)}-{target.replace("/", "-")}.luminext'
+            for name in ('ppocrv6-tiny', 'caiyun')]
 
 
 def installer_assets(v, target):
@@ -146,11 +148,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('metadata').add_argument('--tag', required=True)
+    sub.add_parser('plugin-ref').add_argument('--plugin', choices=['ppocrv6-tiny', 'caiyun'], required=True)
     sub.add_parser('collect').add_argument('--target', choices=TARGETS, required=True)
     sub.add_parser('finalize').add_argument('--notes', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'metadata':
         metadata(ROOT, args.tag)
+    elif args.command == 'plugin-ref':
+        print(plugin_ref(ROOT, args.plugin))
     elif args.command == 'collect':
         collect(ROOT, args.target)
     else:

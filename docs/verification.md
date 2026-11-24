@@ -278,3 +278,10 @@ go test ./plugins/ppocrv6-tiny -v -count=1
 
 - 用户的 v0.13.2 构建在 prepare 阶段被版本校验拦截：标签源码的 mygo.json 仍为 0.13.1。将应用清单、设置窗口、README 和当前功能文档统一为 0.13.2，发布修复归入对应 CHANGELOG；历史版本记录保留。
 - 全量 CGO_ENABLED=0 Go 测试、8 项 Python 发布脚本测试及 git diff --check 通过。版本变更仍需提交，再创建或明确更新尚未公开发布的失败标签；重跑旧任务不会读取未包含在标签提交中的修复。
+
+## 0.13.2 编码与存储路径兼容修复（2026-11-24）
+
+- 将 build-release.sh 和工作流中的默认编码内嵌 JSON 读取统一为 release.py plugin-ref，显式使用 UTF-8；Go 工具输出同样显式按 UTF-8 解码。工作流开启 PYTHONUTF8，并在各平台构建 job 执行 Python 发布工具测试。
+- 本地复现「上层存储目录为符号链接时正常插件无法执行」：修复前新增回归报「插件入口不能包含符号链接」，修复后通过。管理器创建时解析存储根目录；额外验证已安装插件内部的链接入口和链接 bin 目录仍被拒绝。
+- 关闭 Python UTF-8 模式、启用默认编码警告并将其升级为错误后，9 项 Python 测试通过；覆盖中文清单与实际 plugin-ref CLI。全量 CGO_ENABLED=0 Go 测试、Go vet、MyGo vet、真实随包 OCR 与彩云包测试、工作流 YAML/Bash 语法和 git diff --check 通过。
+- internal/plugin 的 Windows amd64 和 macOS arm64 测试二进制交叉编译通过；原生运行与完整安装包构建仍需 GitHub runner 复验，不能用本地模拟与交叉编译替代。

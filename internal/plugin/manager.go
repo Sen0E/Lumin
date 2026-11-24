@@ -31,6 +31,13 @@ func New(root string) (*Manager, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, err
 	}
+	// Normalize trusted storage ancestors (e.g. macOS /var -> /private/var
+	// and Windows directory aliases). Runtime checks must reject links inside
+	// an installed plugin, not aliases in the user's chosen storage location.
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
 	return &Manager{root: root}, nil
 }
 
