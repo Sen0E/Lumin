@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import zipfile
@@ -75,15 +76,53 @@ def fetch(cache, name, record):
     return path
 
 
+
+def sdk_asset(target):
+    return {
+        'linux/amd64': 'sdk-linux.tar.gz',
+        'windows/amd64': 'sdk-windows.zip',
+        'darwin/arm64': 'sdk-macos-arm64.tar.gz',
+    }[target]
+
+
+def unpack_sdk(archive, target, version, stage):
+    """Read only named files; never extract paths or follow archive links."""
+    target_os, arch = target.split('/')
+    platforms = {'linux': 'linux_x86_64', 'windows': 'win_amd64',
+                 'darwin': 'macosx_' + ('arm64' if arch == 'arm64' else 'x86_64')}
+    prefix = f'RapidOCRLite-SDK-{platforms[target_os]}-{version}/'
+    if target_os == 'windows':
+        sdk = zipfile.ZipFile(archive)
+        def read(name):
+            return sdk.read(prefix + name)
+        native_name, output = 'bin/rapidocrlite.dll', 'rapidocrlite.dll'
+    else:
+        sdk = tarfile.open(archive, 'r:gz')
+        def read(name):
+            member = sdk.getmember(prefix + name)
+            if not member.isfile():
+                raise ValueError(f'expected regular SDK file: {name}')
+            return sdk.extractfile(member).read()
+        native_name, output = ('lib/librapidocrlite.so.5.0.0', 'librapidocrlite.so')
+        if target_os == 'darwin':
+            native_name, output = 'lib/librapidocrlite.5.0.0.dylib', 'librapidocrlite.dylib'
+    try:
+        (stage / 'lib' / output).write_bytes(read(native_name))
+        for name in ['LICENSE', 'LICENSE-indra-ocr']:
+            (stage / 'licenses' / ('runtime-' + name)).write_bytes(read(name))
+        (stage / 'abi/rapidocrlite.h').write_bytes(read('include/rapidocrlite/rapidocrlite.h'))
+    finally:
+        sdk.close()
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--target', choices=['linux/amd64', 'windows/amd64'], default='linux/amd64')
+    parser.add_argument('--target', choices=['linux/amd64', 'windows/amd64', 'darwin/arm64'], default='linux/amd64')
     parser.add_argument('--cache', type=Path, default=ROOT / 'build/ppocr-cache')
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
-    lock = json.loads((SOURCE / 'assets.lock.json').read_text())
+    lock = json.loads((SOURCE / 'assets.lock.json').read_text(encoding='utf-8'))
     target_os, arch = args.target.split('/')
-    sdk_name = 'sdk-linux.tar.gz' if target_os == 'linux' else 'sdk-windows.zip'
+    sdk_name = sdk_asset(args.target)
     assets = {name: fetch(args.cache, name, lock['assets'][name])
               for name in ['detection.onnx', 'recognition.onnx', sdk_name]}
     chars = dictionary(assets['recognition.onnx'].read_bytes())
@@ -97,30 +136,18 @@ def main():
             shutil.copyfile(assets[name], stage / 'models' / name)
         (stage / 'models/dictionary.txt').write_bytes(chars)
         version = lock['runtime_version']
-        if target_os == 'linux':
-            sdk = tarfile.open(assets[sdk_name], 'r:gz')
-            prefix = f'RapidOCRLite-SDK-linux_x86_64-{version}/'
-            def read(name):
-                return sdk.extractfile(prefix + name).read()
-            native = read('lib/librapidocrlite.so.5.0.0')
-            (stage / 'lib/librapidocrlite.so').write_bytes(native)
-        else:
-            sdk = zipfile.ZipFile(assets[sdk_name])
-            prefix = f'RapidOCRLite-SDK-win_amd64-{version}/'
-            def read(name):
-                return sdk.read(prefix + name)
-            (stage / 'lib/rapidocrlite.dll').write_bytes(read('bin/rapidocrlite.dll'))
-        # Only explicitly named SDK files are read; no archive extraction paths.
-        for name in ['LICENSE', 'LICENSE-indra-ocr']:
-            (stage / 'licenses' / ('runtime-' + name)).write_bytes(read(name))
-        (stage / 'abi/rapidocrlite.h').write_bytes(read('include/rapidocrlite/rapidocrlite.h'))
-        sdk.close()
+        unpack_sdk(assets[sdk_name], args.target, version, stage)
         for name in ['README.md', 'NOTICE', 'MODEL_LICENSES.md', 'LICENSE-APACHE-2.0', 'assets.lock.json']:
             shutil.copyfile(SOURCE / name, stage / name)
         env = dict(os.environ, CGO_ENABLED='0', GOOS=target_os, GOARCH=arch)
         exe = 'bin/plugin.exe' if target_os == 'windows' else 'bin/plugin'
         subprocess.run(['go', 'build', '-buildvcs=false', '-trimpath', '-ldflags=-s -w',
                         '-o', str(stage / exe), './plugins/ppocrv6-tiny'], cwd=ROOT, env=env, check=True)
+        # macOS runners sign the extracted executable and library before the
+        # archive is made; MyGo cannot sign code nested inside a plugin ZIP.
+        if target_os == 'darwin' and sys.platform == 'darwin':
+            for code in [stage / exe, stage / 'lib/librapidocrlite.dylib']:
+                subprocess.run(['codesign', '--force', '--sign', '-', str(code)], check=True)
         host_env = dict(os.environ, CGO_ENABLED='0')
         host_env.pop('GOOS', None)
         host_env.pop('GOARCH', None)
@@ -134,9 +161,9 @@ def main():
         if not go_license.is_file():
             go_license = SOURCE / 'LICENSE-GO'
         shutil.copyfile(go_license, stage / 'licenses/Go-LICENSE.txt')
-        manifest = json.loads((SOURCE / 'plugin.json').read_text())
+        manifest = json.loads((SOURCE / 'plugin.json').read_text(encoding='utf-8'))
         manifest['entrypoints'] = {args.target: exe}
-        (stage / 'plugin.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+        (stage / 'plugin.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         output = ROOT / 'build/plugins' / f"{manifest['id']}-{manifest['version']}-{target_os}-{arch}.luminext"
         output.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(['go', 'run', './cmd/lumin-plugin-pack', '-dir', str(stage), '-out', str(output)],

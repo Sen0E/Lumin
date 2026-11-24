@@ -11,7 +11,8 @@
 /coverage/
 
 # Generated OCR bundles (recreated by scripts/build-release.sh)
-/resources/*/bundled-ocr.luminext
+/resources/*/bundled-*.luminext
+/release/
 
 # Local configuration, credentials and application data
 /.aws/

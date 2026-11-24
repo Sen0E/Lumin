@@ -10,7 +10,7 @@
 | Linux 截图 | 宿主通过会话 D-Bus 调用 XDG Screenshot 门户 | 可用的 xdg-desktop-portal 和匹配后端、用户授权；无 grim/maim 回退 |
 | Windows 截图 | 宿主调用系统 user32/gdi32 | 交互式桌面，固定显示器；不启动 PowerShell |
 | macOS 截图 | 宿主调用 ScreenCaptureKit/AppKit/CoreGraphics | macOS 14+、屏幕录制权限；不启动 screencapture |
-| 默认离线 OCR | PP-OCRv6 tiny 插件 | Linux/Windows amd64 发布包自带模型、字典、CPU 运行库，无 Python/Tesseract 或运行时下载 |
+| 默认离线 OCR | PP-OCRv6 tiny 插件 | Linux/Windows amd64、macOS arm64 发布包自带模型、字典、CPU 运行库，无 Python/Tesseract 或运行时下载 |
 | 选中文字翻译 | Wayland 原生 PRIMARY / AT-SPI / Windows UIA / macOS AX | Linux Wayland 数据控制协议或辅助功能；目标应用发布选区；macOS 辅助功能授权；无复制模拟或工具调用 |
 | 翻译、云端 OCR | 宿主服务或插件 HTTP 实现 | 用户配置服务地址/凭据及相应网络；离线 OCR 不需要网络 |
 | 插件取消与退出清理 | Unix 进程组 / Windows Job Object | 直接调用系统接口，不启动 taskkill |

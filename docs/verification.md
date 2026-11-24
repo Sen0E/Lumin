@@ -257,3 +257,11 @@ go test ./plugins/ppocrv6-tiny -v -count=1
 - 本地 Markdown 链接检查、全量 CGO_ENABLED=0 go test ./...、Go vet、MyGo vet、git diff --check 通过。
 - go mod tidy 因模块缓存只读且缺少上游测试依赖未完成；未删除或升级依赖，仅将直接导入的 purego、x/sys 归入直接依赖组。现有模块可完成以上全部测试和静态检查。
 - 当前环境禁止写入 Git 索引；原已跟踪的 .agents 仍需维护者运行 git rm -r --cached .agents，再 git add -A 统一暂存新增实现与删除文件。未创建提交、改写历史或上传远程。
+
+## GitHub 三平台构建与发布（2026-11-24）
+
+- 新增按版本标签触发、也可手动指定已有标签的工作流；目标为 Linux amd64、Windows amd64、macOS arm64。安装包携带彩云和 PP-OCRv6 tiny 两个插件，Release 同时提供每个平台的两个独立插件包与 SHA256SUMS。
+- 发布工具的 6 项单元测试通过，覆盖标签/提交校验、完整资源集合、预发布包命名、缺少随包插件、平台入口/插件身份/许可源码检查，以及 macOS SDK 安全读取。工作流 YAML 和全部 Bash 步骤语法检查通过。
+- 全量 CGO_ENABLED=0 Go 测试、Go vet 和 MyGo vet 通过；使用现有 OCR 包运行 internal/ocrsetup、plugins/ppocrv6-tiny 与 internal/plugin 的真实包测试通过。彩云协议测试不发送联网翻译请求。
+- 本地重新编译彩云插件，并使用已有 OCR 资源生成 Linux 0.13.1 tar.gz、DEB、RPM；Linux 资源收集通过，检查了两个随包插件，并生成两个独立 .luminext 发布资源。
+- 当前环境外部下载地址解析失败，完整下载加打包脚本未能从零执行。Windows NSIS 安装程序、macOS 原生 DMG/签名与三平台 GitHub runner 的完整流程，仍需首次推送标签后验证；未创建远程 Release。macOS SDK 固定上游下载地址与 SHA-256，本地仅完成模拟 SDK 归档测试，不能代替原生运行验收。

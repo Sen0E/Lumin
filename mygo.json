@@ -3,5 +3,8 @@
   "identifier": "io.lumin.translator",
   "version": "0.13.1",
   "webview": false,
-  "out": "build"
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "14.0"
+  }
 }

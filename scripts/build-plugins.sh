@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python_cmd="${PYTHON:-python3}"
 if [[ $# -eq 1 && "$1" == ppocrv6-tiny ]]; then
-  exec python3 scripts/build-ppocr-plugin.py --target "${GOOS:-$(go env GOOS)}/${GOARCH:-$(go env GOARCH)}"
+  exec "$python_cmd" scripts/build-ppocr-plugin.py --target "${GOOS:-$(go env GOOS)}/${GOARCH:-$(go env GOARCH)}"
 fi
 plugin_os="${GOOS:-$(go env GOOS)}"
 plugin_arch="${GOARCH:-$(go env GOARCH)}"
@@ -23,7 +24,7 @@ for source in "${sources[@]}"; do
   if [[ "$plugin_os" == windows ]]; then entry="bin/plugin.exe"; fi
   CGO_ENABLED=0 GOOS="$plugin_os" GOARCH="$plugin_arch" go build -buildvcs=false -trimpath -ldflags='-s -w' -o "$plugin_stage/$name/$entry" "./$source"
   # Generate platform metadata from the checked-in manifest.
-  metadata="$(python3 - "$source/plugin.json" "$plugin_stage/$name/plugin.json" "$plugin_os/$plugin_arch" "$entry" <<'PY'
+  metadata="$("$python_cmd" - "$source/plugin.json" "$plugin_stage/$name/plugin.json" "$plugin_os/$plugin_arch" "$entry" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: manifest=json.load(f)
 manifest['entrypoints']={sys.argv[3]:sys.argv[4]}

@@ -8,6 +8,7 @@ fmt:
 
 test:
 	CGO_ENABLED=0 go test ./...
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 
 race:
 	go test -race ./internal/... ./pkg/... ./plugins/...
