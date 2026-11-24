@@ -79,6 +79,35 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             release.verify_plugin(file, 'linux/amd64')
 
+    def test_go_licenses_download_modules_before_reading_directories(self):
+        stage = self.root / 'stage'
+        (stage / 'licenses').mkdir(parents=True)
+        modules = ['github.com/ebitengine/purego', 'golang.org/x/image', 'golang.org/x/sys']
+        def download(command, **kwargs):
+            self.assertEqual(command[:4], ['go', 'mod', 'download', '-json'])
+            mod = command[4]
+            module_dir = self.root / 'empty-cache' / mod
+            self.assertFalse(module_dir.exists())
+            module_dir.mkdir(parents=True)
+            (module_dir / 'LICENSE').write_text('license for ' + mod)
+            return json.dumps({'Path': mod, 'Dir': str(module_dir)})
+        with patch.object(ppocr.subprocess, 'check_output', side_effect=download) as fetch:
+            ppocr.copy_go_licenses(stage, {})
+        self.assertEqual(fetch.call_count, 3)
+        for mod in modules:
+            self.assertEqual((stage / 'licenses' / (mod.replace('/', '-') + '.txt')).read_text(),
+                             'license for ' + mod)
+
+    def test_go_licenses_reject_missing_module_directory_and_license(self):
+        stage = self.root / 'stage'
+        (stage / 'licenses').mkdir(parents=True)
+        for record in [{}, {'Error': 'download failed'}, {'Dir': str(self.root / 'missing')}]:
+            with self.subTest(record=record):
+                with patch.object(ppocr.subprocess, 'check_output', return_value=json.dumps(record)):
+                    with self.assertRaisesRegex(ValueError, 'license'):
+                        ppocr.copy_go_licenses(stage, {})
+        self.assertEqual(list((stage / 'licenses').iterdir()), [])
+
     def test_macos_sdk_uses_pinned_regular_files_without_extracting_paths(self):
         stage = self.root / 'stage'
         for name in ['lib', 'licenses', 'abi']:

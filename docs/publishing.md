@@ -102,3 +102,9 @@ bash -n scripts/build-release.sh scripts/build-plugins.sh
 ```
 
 本地测试只验证当前宿主及可交叉编译的部分；首次 GitHub runner 完整运行记录仍是三平台安装包与系统签名验证的依据。
+
+### 构建故障排查与修复后重试
+
+- 报错找不到 `LICENSE`：OCR 脚本需要先 `go mod download -json <模块>` 获取当前 go.mod 中固定版本的模块目录，不能假设目标平台编译已下载全部跨平台依赖。当前脚本会显式获取 purego、x/image、x/sys 并检查许可证存在；不会在缺少许可时继续打包。
+- Windows 报错 `Rel: can't make D: ... relative to C:`：GitHub runner 的临时目录和工作区位于不同磁盘属于正常布局。打包器允许不同卷上的输出，同时继续拒绝将输出放入插件源码目录；Windows 专属回归由 Windows runner 实际执行。
+- 修改脚本后，先提交并推送修复。Actions 的已有运行和版本标签都指向原提交，直接重跑不会使用 main 上的新代码。推荐更新 mygo.json、界面版本及 CHANGELOG 后创建新版本标签（例如 v0.13.2）；同一提交因网络等临时故障失败才适合直接重跑。手动运行时同样需要填写包含修复的已有标签。

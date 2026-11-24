@@ -114,6 +114,20 @@ def unpack_sdk(archive, target, version, stage):
     finally:
         sdk.close()
 
+def copy_go_licenses(stage, host_env):
+    # A target build only downloads modules used on that OS. Explicitly fetch
+    # each pinned module before reading its license; `go list -m` may have no Dir.
+    for mod in ['github.com/ebitengine/purego', 'golang.org/x/image', 'golang.org/x/sys']:
+        record = json.loads(subprocess.check_output(
+            ['go', 'mod', 'download', '-json', mod], cwd=ROOT, env=host_env, text=True))
+        if record.get('Error') or not record.get('Dir'):
+            raise ValueError(f'cannot locate license for {mod}: {record.get("Error", "missing module directory")}')
+        source = Path(record['Dir']) / 'LICENSE'
+        if not source.is_file():
+            raise ValueError(f'missing dependency license for {mod}: {source}')
+        shutil.copyfile(source, stage / 'licenses' / (mod.replace('/', '-') + '.txt'))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', choices=['linux/amd64', 'windows/amd64', 'darwin/arm64'], default='linux/amd64')
@@ -152,10 +166,7 @@ def main():
         host_env.pop('GOOS', None)
         host_env.pop('GOARCH', None)
         # Preserve licenses of the Go libraries linked into the entrypoint.
-        for mod in ['github.com/ebitengine/purego', 'golang.org/x/image', 'golang.org/x/sys']:
-            path = subprocess.check_output(['go', 'list', '-m', '-f', '{{.Dir}}', mod],
-                                           cwd=ROOT, env=host_env, text=True).strip()
-            shutil.copyfile(Path(path) / 'LICENSE', stage / 'licenses' / (mod.replace('/', '-') + '.txt'))
+        copy_go_licenses(stage, host_env)
         goroot = subprocess.check_output(['go', 'env', 'GOROOT'], env=host_env, text=True).strip()
         go_license = Path(goroot) / 'LICENSE'
         if not go_license.is_file():

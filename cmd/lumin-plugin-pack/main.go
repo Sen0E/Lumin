@@ -15,6 +15,22 @@ import (
 	"lumin/internal/plugin"
 )
 
+// validateOutputLocation receives absolute paths. Files on different Windows
+// volumes are necessarily outside one another; filepath.Rel rejects that case.
+func validateOutputLocation(dir, out string) error {
+	if !strings.EqualFold(filepath.VolumeName(dir), filepath.VolumeName(out)) {
+		return nil
+	}
+	rel, err := filepath.Rel(dir, out)
+	if err != nil {
+		return err
+	}
+	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return errors.New("output must be outside the source directory")
+	}
+	return nil
+}
+
 func pack(dir, out string) error {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -27,12 +43,8 @@ func pack(dir, out string) error {
 	if filepath.Ext(out) != ".luminext" {
 		return errors.New("output must end in .luminext")
 	}
-	rel, err := filepath.Rel(dir, out)
-	if err != nil {
+	if err := validateOutputLocation(dir, out); err != nil {
 		return err
-	}
-	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return errors.New("output must be outside the source directory")
 	}
 	if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
 		return err

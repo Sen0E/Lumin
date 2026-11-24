@@ -265,3 +265,11 @@ go test ./plugins/ppocrv6-tiny -v -count=1
 - 全量 CGO_ENABLED=0 Go 测试、Go vet 和 MyGo vet 通过；使用现有 OCR 包运行 internal/ocrsetup、plugins/ppocrv6-tiny 与 internal/plugin 的真实包测试通过。彩云协议测试不发送联网翻译请求。
 - 本地重新编译彩云插件，并使用已有 OCR 资源生成 Linux 0.13.1 tar.gz、DEB、RPM；Linux 资源收集通过，检查了两个随包插件，并生成两个独立 .luminext 发布资源。
 - 当前环境外部下载地址解析失败，完整下载加打包脚本未能从零执行。Windows NSIS 安装程序、macOS 原生 DMG/签名与三平台 GitHub runner 的完整流程，仍需首次推送标签后验证；未创建远程 Release。macOS SDK 固定上游下载地址与 SHA-256，本地仅完成模拟 SDK 归档测试，不能代替原生运行验收。
+
+
+## CI 首次构建故障修复（2026-11-24）
+
+- 修复 OCR 构建脚本通过 go list 读取未下载模块时得到空目录的问题；改为显式下载 go.mod 固定版本模块并读取 JSON 中的 Dir，检查目录及 LICENSE，保留全部依赖许可。使用当前真实模块缓存验证三份许可证读取与复制成功。
+- 修复 Windows C 盘临时目录到 D 盘工作区打包失败的问题：不同卷直接判定为外部输出，相同卷保留目录包含关系检查。打包临时文件仍建在输出目录，最终重命名不会跨盘。
+- 8 项 Python 发布脚本测试、插件打包/重复输出/嵌套输出回归、全量 CGO_ENABLED=0 Go 测试、Go vet、MyGo vet 与 git diff --check 通过。许可证回归模拟空缓存并验证显式下载后复制，覆盖缺少模块目录、下载错误与缺少许可证拒绝打包。
+- Windows 专属回归覆盖 C→D、同卷外部路径、UNC 共享输出及大小写不同的嵌套路径；Windows amd64 测试二进制交叉编译通过，工作流已安排每个平台执行打包器测试。本机没有 Windows 运行环境，跨磁盘回归的实际执行和完整安装包构建仍需 GitHub runner 验证。
