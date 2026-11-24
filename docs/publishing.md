@@ -70,11 +70,11 @@ git ls-files -ci --exclude-standard
 ### 触发方式
 
 1. 将当前所有实现、`.github` 工作流和脚本提交并推送到 GitHub。
-2. 更新 `mygo.json`、界面版本及 CHANGELOG，提交版本变更。标签必须与 mygo.json 完全一致。当前版本示例：
+2. 更新 `mygo.json`、界面版本及 CHANGELOG，提交版本变更。标签必须与 mygo.json 完全一致。当前版本示例（先提交版本变更，再创建标签）：
 
 ```bash
-git tag -a v0.13.1 -m "Release v0.13.1"
-git push origin v0.13.1
+git tag -a v0.13.2 -m "Release v0.13.2"
+git push origin v0.13.2
 ```
 
 也可在 Actions 页面选择 Build and release → Run workflow，输入已存在的标签。手动运行只读取该标签源码，不创建或移动标签。不要给同一个发布版本改标签指向；修改源码后使用新版本。带 `-beta.1` / `-rc.1` 等版本后缀的标签自动发布为 Pre-release。
@@ -108,3 +108,5 @@ bash -n scripts/build-release.sh scripts/build-plugins.sh
 - 报错找不到 `LICENSE`：OCR 脚本需要先 `go mod download -json <模块>` 获取当前 go.mod 中固定版本的模块目录，不能假设目标平台编译已下载全部跨平台依赖。当前脚本会显式获取 purego、x/image、x/sys 并检查许可证存在；不会在缺少许可时继续打包。
 - Windows 报错 `Rel: can't make D: ... relative to C:`：GitHub runner 的临时目录和工作区位于不同磁盘属于正常布局。打包器允许不同卷上的输出，同时继续拒绝将输出放入插件源码目录；Windows 专属回归由 Windows runner 实际执行。
 - 修改脚本后，先提交并推送修复。Actions 的已有运行和版本标签都指向原提交，直接重跑不会使用 main 上的新代码。推荐更新 mygo.json、界面版本及 CHANGELOG 后创建新版本标签（例如 v0.13.2）；同一提交因网络等临时故障失败才适合直接重跑。手动运行时同样需要填写包含修复的已有标签。
+
+- 报错 `tag vX does not match mygo.json: vY`：标签指向的提交仍是旧版本。只更新 main 或只创建新标签都不够；必须先在源码中完成版本升级并提交，再创建标签。当前工作树版本为 0.13.2；已创建的旧标签不会跟随 main 移动。若标签在 prepare 阶段失败且从未发布 Release，可明确重新指向修复提交后再推送；已有公开 Release 的标签不应移动，应使用新版本。

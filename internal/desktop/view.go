@@ -32,7 +32,7 @@ func (a *App) View(c *ui.Context) {
 					}
 				})
 				ui.Text(c, "关闭窗口后继续后台运行").FontSize(11).TextColor(t.TextMuted)
-				ui.Text(c, "v0.13.1 · Go + MyGo").FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, "v0.13.2 · Go + MyGo").FontSize(11).TextColor(t.TextMuted)
 			})
 			ui.Column(c.Key("workspace")).Grow(1).MinWidth(0).MinHeight(0).Padding(28).Gap(18).Children(func() {
 				ui.Text(c, a.page).FontSize(26).Bold()
@@ -44,7 +44,7 @@ func (a *App) View(c *ui.Context) {
 				case "历史记录":
 					a.historyView(c)
 				case "关于应用":
-					ui.Text(c, "Lumin 0.13.1").FontSize(20).Bold()
+					ui.Text(c, "Lumin 0.13.2").FontSize(20).Bold()
 					ui.Text(c, "Go + MyGo 原生桌面翻译工具").TextColor(t.TextMuted)
 					ui.Text(c, "支持离线文字识别、可配置翻译服务与插件扩展。").TextColor(t.TextMuted)
 				default:
