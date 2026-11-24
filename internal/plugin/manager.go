@@ -45,9 +45,6 @@ func Inspect(file string) (Manifest, error) {
 
 func openArchive(file string) (*zip.ReadCloser, Manifest, error) {
 	var m Manifest
-	if strings.EqualFold(filepath.Ext(file), ".potext") {
-		return nil, m, errors.New("Pot .potext 依赖 Tauri/JavaScript，不能直接执行；请按 docs/plugins.md 迁移为 .luminext")
-	}
 	if !strings.EqualFold(filepath.Ext(file), ".luminext") {
 		return nil, m, errors.New("请选择 .luminext 插件包")
 	}

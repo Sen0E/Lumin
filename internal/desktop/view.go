@@ -9,18 +9,18 @@ import (
 	"lumin/internal/domain"
 )
 
-var pages = []string{"翻译服务", "插件", "设置"}
-var translationPages = []string{"翻译", "历史记录", "生词本"}
+var pages = []string{"常规设置", "翻译设置", "热键设置", "服务设置", "历史记录", "备份设置", "关于应用"}
 
 func (a *App) View(c *ui.Context) {
+	a.applyAppearance(c)
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
-		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		ui.Row(c).Grow(1).MinHeight(0).Disabled(a.backup.restoring).AlignItems(ui.Stretch).Children(func() {
 			ui.Column(c.Key("sidebar")).Width(180).Shrink(0).Padding(20, 14).Gap(8).Background(t.Surface).Children(func() {
 				ui.Text(c, "Lumin").FontSize(28).Bold().Margin(0, 8, 0, 8)
 				ui.Text(c, "偏好设置").FontSize(12).TextColor(t.TextMuted).Margin(0, 8, 28, 8)
 				for _, page := range pages {
-					b := ui.Button(c.Key(page), page).Height(42).OnClick(func() { a.page = page; a.confirmClear = false })
+					b := ui.Button(c.Key(page), page).Height(42).OnClick(func() { a.page = page; a.confirmClear = false; a.confirmDelete = "" })
 					if a.page == page {
 						b.Background(t.Accent).TextColor(t.AccentText)
 					}
@@ -32,16 +32,22 @@ func (a *App) View(c *ui.Context) {
 					}
 				})
 				ui.Text(c, "关闭窗口后继续后台运行").FontSize(11).TextColor(t.TextMuted)
-				ui.Text(c, "v0.4.0 · Go + MyGo").FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, "v0.13.1 · Go + MyGo").FontSize(11).TextColor(t.TextMuted)
 			})
 			ui.Column(c.Key("workspace")).Grow(1).MinWidth(0).MinHeight(0).Padding(28).Gap(18).Children(func() {
 				ui.Text(c, a.page).FontSize(26).Bold()
 				switch a.page {
-				case "翻译服务":
-					a.providersView(c)
-				case "插件":
-					a.pluginsView(c)
-				case "设置":
+				case "服务设置":
+					a.servicesView(c)
+				case "备份设置":
+					a.backupView(c)
+				case "历史记录":
+					a.historyView(c)
+				case "关于应用":
+					ui.Text(c, "Lumin 0.13.1").FontSize(20).Bold()
+					ui.Text(c, "Go + MyGo 原生桌面翻译工具").TextColor(t.TextMuted)
+					ui.Text(c, "支持离线文字识别、可配置翻译服务与插件扩展。").TextColor(t.TextMuted)
+				default:
 					a.settingsView(c)
 				}
 			})
@@ -142,46 +148,5 @@ func (a *App) providersView(c *ui.Context) {
 		})
 		ui.Spacer(c)
 		ui.PrimaryButton(c, "保存服务").Disabled(a.saving).OnClick(a.saveSettings)
-	})
-}
-
-func (a *App) settingsView(c *ui.Context) {
-	t := c.Theme()
-	ui.Scroll(c.Key("settings")).Grow(1).Disabled(a.saving).Children(func() {
-		ui.Column(c).Gap(16).Children(func() {
-			ui.Text(c, "后台运行").FontSize(18).Bold()
-			ui.Text(c, "关闭窗口会隐藏到后台，快捷键和外部调用继续可用。通过托盘或重新运行 Lumin 打开设置；点击左下角“退出 Lumin”结束程序。").TextColor(t.TextMuted)
-			ui.Checkbox(c, &a.watchClipboard, "监听剪贴板（立即生效，本次运行有效）")
-			a.preferencesView(c)
-			ui.Text(c, "数据与隐私").FontSize(18).Bold()
-			ui.Checkbox(c, &a.draft.SaveHistory, "保存翻译历史")
-			ui.Text(c, "配置与历史保存在："+a.store.Dir()).FontSize(12).Selectable().TextColor(t.TextMuted)
-			ui.Text(c, "密钥可通过环境变量提供；直接填写的密钥以明文保存在本机配置文件中。剪贴板监听每次启动默认关闭。").FontSize(12).TextColor(t.TextMuted)
-			field(c, "打开翻译窗口快捷键", &a.draft.InputShortcut, false)
-			field(c, "翻译剪贴板快捷键", &a.draft.ClipboardShortcut, false)
-			field(c, "截图翻译快捷键", &a.draft.ScreenshotShortcut, false)
-			ui.Text(c, "留空可禁用快捷键。Wayland 由桌面门户授权；窗口内 Ctrl / ⌘ + Enter 翻译，Esc 取消当前任务，再按一次隐藏翻译窗口。").FontSize(12).TextColor(t.TextMuted)
-			ui.Text(c, "OCR 引擎").FontSize(18).Bold()
-			if a.draft.OCRPlugin != "" {
-				ui.Text(c, a.draft.OCRPlugin).Selectable()
-				a.pluginFields(c, "ocr", a.draft.OCRPlugin, &a.draft.OCRSettings)
-				ui.Button(c, "恢复内置 Tesseract").OnClick(func() { a.draft.OCRPlugin = ""; a.draft.OCRSettings = nil; a.pluginEditors = nil })
-			} else {
-				ui.Text(c, "内置 Tesseract（可在插件页面更换）")
-			}
-			field(c, "OCR 语言（Tesseract）", &a.draft.OCRLanguages, false)
-			ui.Text(c, "图片识字需安装 Tesseract 和语言包。默认 eng+chi_sim 表示英文与简体中文。").FontSize(12).TextColor(t.TextMuted)
-			ui.Text(c, "外部调用").FontSize(18).Bold()
-			ui.Checkbox(c, &a.draft.ServerEnabled, "启用本地 HTTP 服务（保存后重启生效）")
-			field(c, "回环监听地址", &a.draft.ServerAddress, false)
-			field(c, "外部调用令牌", &a.draft.ServerToken, true)
-			ui.Button(c, "生成新令牌").OnClick(func() { a.draft.ServerToken = rand.Text() })
-			ui.Text(c, "POST /translate 接收纯文本，使用 Authorization: Bearer <令牌>。详情见 docs/development.md。").FontSize(12).TextColor(t.TextMuted)
-		})
-	})
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, "放弃未保存修改").Disabled(a.saving).OnClick(a.discardSettings)
-		ui.Spacer(c)
-		ui.PrimaryButton(c, "保存设置").Disabled(a.saving).OnClick(a.saveSettings)
 	})
 }

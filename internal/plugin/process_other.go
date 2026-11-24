@@ -4,4 +4,4 @@ package plugin
 
 import "os/exec"
 
-func configureProcess(*exec.Cmd) {}
+func runProcess(cmd *exec.Cmd) error { return cmd.Run() }

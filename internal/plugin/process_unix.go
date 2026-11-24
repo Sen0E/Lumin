@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-func configureProcess(cmd *exec.Cmd) {
+func runProcess(cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -18,4 +18,6 @@ func configureProcess(cmd *exec.Cmd) {
 		}
 		return err
 	}
+
+	return cmd.Run()
 }

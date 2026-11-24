@@ -23,7 +23,7 @@
 ## 本环境无法完成
 
 - 原生窗口启动验证在本环境返回 `mygo: cannot open display`。当前沙箱无法访问宿主显示服务，因此没有把离屏渲染当成真机启动成功。
-- Linux Screenshot 门户授权、grim/maim 回退和真实多显示器框选未完成真机验收；Windows/macOS 截图仅编译验证。macOS 当前只支持主显示器。
+- Linux Screenshot 门户授权、grim/maim 回退和真实多显示器框选未完成真机验收；Windows/macOS 截图仅编译验证。macOS 目标屏幕的 `-R`、负坐标和 Retina 缩放仍需真机确认。
 - 托盘、Wayland 全局快捷键授权、系统剪贴板事件、文件选择器和中文输入法需要在实际桌面验证。
 - 当前 Tesseract 只有 `eng` 和 `osd`，未验证中文 OCR。安装 `chi_sim` 后再验证默认中英组合。
 - 未配置实际翻译服务密钥或运行中的 Ollama，未做生产接口连通性和翻译质量测试。
@@ -39,7 +39,7 @@
 6. 检查托盘、全局快捷键与剪贴板监听；复制译文不能反复触发翻译。
 7. 配置已安装 OCR 语言，导入图片并编辑识别结果后翻译。
 8. 安装示例插件，添加服务或选择 OCR 引擎、填写参数并保存；验证切换、卸载引用保护与重启恢复。
-9. 按 [截图验收](screenshots.md) 检查权限、两个窗口可见性恢复、多屏缩放、取消与临时文件。
+9. 按 [截图验收](screenshots.md) 检查权限、两个窗口可见性恢复、鼠标所在显示器截图/框选、取消与临时文件。
 10. 启用外部接口并重启，用带令牌的 curl 请求验证，包括截图端点；无令牌请求应返回 401。
 
 复现命令及故障恢复见 [开发手册](development.md)。
@@ -96,3 +96,164 @@
 本轮也使用独立 `LUMIN_CONFIG_DIR=/tmp/lumin-v040/startup` 启动 Linux 产物，仍返回 `mygo: cannot open display`，因此无法在工具环境完成原生关闭与托盘实测。测试新版前先退出旧版进程，避免单实例机制唤起旧版。
 
 此处的离屏和策略测试不代表窗口管理器、托盘或全局快捷键已完成实机验收。
+
+## 0.5.0 窗口功能归属（2026-11-23）
+
+用户确认：安装 libayatana-appindicator 后，当前 KDE Wayland 环境托盘可以正常使用。当前系统中的 `libayatana-appindicator3.so.1` 已通过动态加载检查；工具环境仍无法访问宿主显示和会话总线，未声称已在工具中实测桌面图标。
+
+- 全项目 `CGO_ENABLED=0 go test ./...`、`go test -race ./internal/... ./pkg/... ./plugins/...`、Go vet、MyGo vet 通过。
+- Linux 0.5.0 可执行文件、deb/rpm/tar.gz 已生成；Windows amd64、macOS arm64 交叉编译通过。
+- 原有服务测试、排序、插件字段、草稿保存、截图/OCR/翻译链路继续通过。
+- 新增窗口位置回归：主窗口配置分类、服务子页和历史；翻译窗不存在历史/收藏/设置导航及截图工具栏；历史收藏过滤及载入打开小窗口而不改主窗口页或草稿；置顶指令、原文复制和剪贴板反馈保护。
+- 新增托盘诊断测试：库缺失的完整退出提示、无桌面服务/无面板、非法返回、其他应用图标、当前进程注册、项目消失；检查任务的单实例执行和退出取消。
+- 已检查 520×620 / 460×480 翻译窗口和 1100×800 / 920×680 主窗口渲染；页面截图在 `/tmp/lumin-v050/`。
+
+本轮真机复验重点：重新启动新版，托盘菜单包括图片识字；主窗口“服务设置”可切换翻译/OCR/插件；历史载入唤起小窗口；小窗口置顶切换生效且关闭后仍可快捷键唤起。完整功能位置以 [window-map.md](window-map.md) 为准。独立 Recognize 结果窗口仍是 UI-04 待迁移项，当前 OCR 文本继续进入翻译编辑器。
+
+## 0.6.0 独立识别窗口
+
+- UI-04：新增 recognition_window_test.go，覆盖识字路由、保留图片重试、编辑结果转翻译、复制防剪贴板循环、关闭拒绝迟到结果且不影响翻译、取消截图不弹窗。
+- windows_test.go 增加第三业务窗口的截图隐藏/恢复、延迟打开、截图期间关闭与真实退出验证。
+- 检查 480×560 原生离屏渲染（`LUMIN_TEST_SCREENSHOTS` 输出 recognition.png）；按钮和编辑器边界测试覆盖忙碌/空闲切换。
+- `CGO_ENABLED=0 go test ./...`、`go test -race ./internal/...`、`go vet ./...`、`go tool mygo vet .` 均通过。
+- 实机仍需复验：托盘图片/截图识字打开识别窗；截图翻译直达翻译窗；三个窗口可见时截图无自身窗口；识别运行中关闭不再弹回；修改结果后转翻译。自动化测试使用模拟 OCR，不代表真实 Tesseract/插件服务或 Windows 桌面已验收。
+- 构建：MyGo Linux amd64 0.6.0（deb/rpm/tar.gz）及 Windows amd64 0.6.0 均成功；Windows ZIP 包含 EXE 和图标，PE 架构与 ZIP 完整性验证通过。未在 Windows 实机运行。
+
+## 0.7.0 备份恢复
+
+- `internal/backup`：完整/默认去凭据往返、不修改源配置、未知版本/字段、损坏 JSON、尾随内容、重复历史 ID、超大输入与失败导出不覆盖。
+- `internal/storage`：旧双文件迁移、快照重新打开、恢复前备份往返、模拟原子提交失败、恢复备份写入失败、revision 拒绝迟到历史、导出不能覆盖数据目录文件、坏快照不回退。
+- `internal/desktop`：默认导出无密钥、坏预览清除旧确认、预览不写入、必须确认覆盖、真实复选框/恢复按钮、使用已校验内存内容、恢复后设置/草稿/历史与快捷键刷新；检查 920×680 预览页离屏图。
+- 全项目 CGO_ENABLED=0 测试、internal 竞态测试、Go vet、MyGo vet 均通过。最终按钮测试与版本变更后补跑相关 desktop 测试通过。
+- MyGo Linux amd64（deb/rpm/tar.gz）与 Windows amd64 0.7.0 构建成功；Windows ZIP 完整性和 PE AMD64 检查通过。
+- 未验证真实原生文件对话框、Windows 实机、断电或文件占用。实机建议先导出完整备份到数据目录之外，在独立 LUMIN_CONFIG_DIR 测试恢复及恢复前备份再导入。
+
+## PP-OCRv6 tiny 插件 1.0.0（2026-11-24）
+
+插件 `lumin.ppocrv6-tiny` 使用宿主 0.7.0 的协议 v1，不修改宿主协议或配置 schema。复现命令：
+
+```bash
+GOCACHE=/tmp/lumin-gocache GOTMPDIR=/tmp CGO_ENABLED=0 \
+LUMIN_PPOCR_PACKAGE="$PWD/build/plugins/lumin.ppocrv6-tiny-1.0.0-linux-amd64.luminext" \
+go test ./plugins/ppocrv6-tiny -v -count=1
+```
+
+结果：`PASS`（本次环境约 1.25 秒）。`TestInstalledPluginRealModels` 通过 `internal/plugin.Manager` 将真实包安装到含空格的临时目录，清空 `PATH` 后启动真实子进程并完成推理；英文样例包含 `Lumin translation test.`，中英文混排样例包含 `Lumin 离线文字识别测试`、`你好世界`、`Hello world` 和 `12345`。同一测试还覆盖取消、无效 `threads` 设置和无字图片错误。
+
+- Linux amd64 包：`build/plugins/lumin.ppocrv6-tiny-1.0.0-linux-amd64.luminext`，10,474,412 字节，SHA-256 `a1fb68ba56bf835eec075bf97a94d2f58e6c5f4bb3459f50e157854ced63cf65`；包含 `bin/plugin`、`lib/librapidocrlite.so`、检测/识别 ONNX、字典、ABI 头文件和许可证，共 18 个文件。
+- Windows amd64 包：`build/plugins/lumin.ppocrv6-tiny-1.0.0-windows-amd64.luminext`，9,312,658 字节，SHA-256 `12b0307008d95d70ef333cf6442d00e2c287816f5b15f7b0480dd3dd89ed33ad`；包含 `bin/plugin.exe`、`lib/rapidocrlite.dll` 和相同模型资产，共 18 个文件。仅完成交叉构建和包内容检查，未在 Windows 实机运行。
+- 资产由 `plugins/ppocrv6-tiny/assets.lock.json` 固定 SHA-256；模型字典从识别 ONNX 的 `character` 元数据提取并校验。运行时不需要 Python、Tesseract 或网络。
+- 两个包均通过 `unzip -t`；包内 `detection.onnx`、`recognition.onnx`、`dictionary.txt` 的 SHA-256 分别为 `f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5`、`e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b`、`34d139222b6e8d84830f57476e39f01e76be3baffde3e9df75a079e251140598`，与锁定文件一致。
+- 已知限制：RapidOCRLite 5.0.0a16 是预发布专用解释器，不支持任意 ONNX；没有 macOS/ARM 包；没有 180° 方向分类；每次识别启动新插件进程，没有常驻模型缓存；只向宿主返回文本，不返回框或置信度元数据。
+
+## 鼠标所在显示器截图（2026-11-24）
+
+- `internal/capture/display_test.go` 覆盖横排右侧、竖排上方负坐标、负 X、缩放桌面、已裁剪为单屏和单显示器；另验证裁剪后的像素来源与空目标回退。
+- `internal/bootstrap/capture.go` 在隐藏 Lumin 窗口前读取鼠标与显示器，后续截图和框选使用同一 `capture.DisplayTarget`；Linux 通过 GTK3 `gtk_window_fullscreen_on_monitor` 将覆盖层放到目标显示器。
+- `GOCACHE=/tmp/lumin-gocache GOTMPDIR=/tmp CGO_ENABLED=0 go test ./...`：通过。
+- `GOCACHE=/tmp/lumin-gocache GOTMPDIR=/tmp go test ./...`：通过。
+- `GOCACHE=/tmp/lumin-gocache GOTMPDIR=/tmp go test -race ./internal/... ./pkg/... ./plugins/...`：通过。
+- `GOCACHE=/tmp/lumin-gocache GOTMPDIR=/tmp go vet ./...`、`go tool mygo vet .`：通过。
+- Windows amd64 与 macOS arm64 的 `internal/capture`、`internal/bootstrap` 测试包交叉编译通过；Windows PowerShell 使用目标 HMONITOR 的 `GetMonitorInfo` 物理边界，失败时才回退鼠标位置。
+- 未在当前沙箱完成真实多屏合成器验收：仍需在 Linux KDE Wayland 依次把鼠标移到各屏，确认只出现目标屏快照且覆盖层不跨屏；混合 DPI、Windows/macOS 多屏和 macOS 录屏授权均待对应真机验证。
+
+## 0.8.0 历史单条删除与导出（DATA-03）
+
+- `internal/storage/history_actions_test.go`：按 ID 删除持久化、收藏保护、缺失 ID、提交失败保留原数据；导出不包含配置，保护活动数据路径，未知格式失败保留旧导出文件。
+- `internal/historyexport/export_test.go`：JSON Unicode/多行完整往返，CSV 逗号/引号/换行、多服务及失败结果、一条历史无服务结果时仍保留；空导出与未知格式。
+- `internal/desktop/history_actions_test.go`：真实删除按钮和收藏二次确认、取消、删除后载入列表、草稿与翻译输入隔离；点击导出时固定搜索/收藏筛选及深复制结果；原生保存取消/错误，恢复期间互斥。
+- 已检查 920×680 历史页离屏图 `history-actions.png`（使用 LUMIN_TEST_SCREENSHOTS 输出），确认控件边界与文字完整；覆盖额外重建帧及删除后列表变化。
+- `CGO_ENABLED=0 go test ./...`、`go test -race ./internal/...`、`go vet ./...`、`go tool mygo vet .` 全部通过，包含用户新增的多屏坐标测试。真实桌面文件保存和 Windows 运行仍待实机验证，多屏平台限制沿用 CAP-05 记录。
+- MyGo Linux amd64 0.8.0 deb/rpm/tar.gz 与 Windows amd64 构建成功；Windows 便携 ZIP 的完整性和 PE AMD64 架构校验通过。
+
+## 0.9.0 插件 OCR 默认可用与设置合并
+
+- `ocrsetup/setup_test.go`：首次安装并持久化默认插件、安装时不执行入口、既有引擎和主动停用保留、缺少资源不回退系统；真实 PP-OCRv6 tiny 包安装后清空 PATH 仍可识别英文固定样例。
+- `desktop/ocr_settings_test.go`：宿主无系统 OCR 回退、无引擎时不截图并直达服务设置/OCR 服务；重复识别导航移除；草稿选择/字段编辑/停用/放弃；独立测试不修改原文/识别结果/历史/配置，临时文件清理，取消拒绝迟到结果。
+- `config/config_test.go`：新配置无需系统语言配置，旧 ocr_languages 与新增可选 ocr_disabled 兼容。
+- 全项目 `CGO_ENABLED=0 go test ./...`、`go test -race ./internal/...`、Go vet、MyGo vet 通过。移除独立文字识别导航后补跑 desktop 全测试通过，并重新检查 MyGo vet。
+- 使用 LUMIN_TEST_SCREENSHOTS 输出并检查 920×680 最小服务设置布局。真实 OCR 通过 LUMIN_PPOCR_PACKAGE 指定包运行；测试未发送当前截图或调用系统工具。
+- 运行库当前仍按请求加载；未引入常驻模型缓存。桌面托盘入口、原生窗口/文件对话框与 Windows 模型运行仍待实机；用户已有多屏改动与相应平台限制保留。
+- 最终 Linux/Windows amd64 0.9.0 构建成功；Linux tar.gz 与 Windows 便携 ZIP 均包含对应平台默认 OCR 插件，嵌套包完整性和清单平台检查通过，Windows PE AMD64 校验通过。
+
+## 0.10.0 全屏框选体验（CAP-06）
+
+- 采用 mouse-up 提交方式，取消顶部工具栏；画布在 1280×720 下精确覆盖 (0,0)-(1280,720)，检查输出 selection.png，拖动时提示直接绘制在画布。
+- `selection_test.go`：松开自动提交、反向拖动、原图精确坐标、重复 Enter/Esc/右键只完成一次、误点重选、CancelPress 清除且可重选、拖动中右键/Esc 取消、整屏边缘/留白比例映射、尺寸变化不改变已选原图坐标。
+- `capture_options_test.go`：覆盖层 Frameless + Hidden + AlwaysOnTop，保留目标负坐标与尺寸，几何信息不可用时仍有有效兜底。
+- 全项目 CGO_ENABLED=0 测试、desktop/bootstrap/capture 竞态测试、Go vet、MyGo vet 通过。保存截图前修正了 float32 归一化导致部分右/下边缘多 1 像素的问题。
+- 多屏、混合 DPI、各桌面合成器、Windows/macOS 全屏与标题栏实际表现仍需真机验收。保留既有按鼠标显示器抓取与 GTK 指定显示器全屏逻辑，未宣称离屏图等同实机全屏验证。
+- Linux/Windows amd64 0.10.0 构建成功，Linux tar 与 Windows 便携包均保留默认 OCR 插件；Windows ZIP 完整性及 PE AMD64 验证通过。
+
+## 0.11.0 运行时工具独立化（DEP-01）
+
+日期：2026-11-24。以下为当前实现证据；前面 Tesseract、grim/maim、PowerShell、screencapture 的记录只描述历史版本，相关实现已移除。
+
+- Linux 全量 Go 测试通过，指定真实 PP-OCR 包的清空 PATH 模型推理与默认引擎安装测试通过。
+- capture/plugin/ocrsetup race 检查、Go vet、MyGo vet 通过。
+- Windows amd64、macOS arm64 应用交叉构建通过；Windows capture/plugin 测试包及 macOS capture 测试包交叉编译通过。
+- 新增源码依赖守卫、插件私有 PATH、历史 Tesseract 引用迁移及截图提前取消回归。
+- Windows 原生 Job Object 进程树取消测试已实现并编译，未在 Windows 执行。
+- 用户已确认 0.10.0 Linux 全屏框选交互正常。本轮保留 Linux 门户流程，移除工具回退；Windows GDI、macOS 14+ ScreenCaptureKit 的真实截图、权限与混合 DPI 尚待真机。
+- macOS/ARM 暂无随包离线 OCR 插件，原生截图实现不代表默认 OCR 已覆盖这些平台。
+- 发布构建：0.11.0 Linux tar/deb/rpm、Windows amd64 便携 ZIP 已生成；核验 tar/ZIP 含默认 OCR、ZIP 完整性与 EXE 的 PE AMD64 标记通过。
+
+## 0.11.1 截图延迟与热键显示（PERF-01 / UI-04）
+
+- 全量 Go 测试含真实 PP-OCR 包通过；bootstrap/capture/desktop race、Go vet、MyGo vet 通过。
+- 热键 UI 回归覆盖平台显示、多个构建帧、草稿编辑、保存、页面切换、放弃与禁用；1100×800 热键页渲染已检查。
+- 所有三个业务窗口显隐组合覆盖：仅实际隐藏可见窗口时需要截图前等待；背景截图跳过 200ms，仍不改变显示器选择和恢复规则。
+- Full HD 固定样例 BenchmarkTempPNGFullHD，同机单轮各 3 次：默认压缩约 58.2ms/op，BestSpeed 约 36.3ms/op。只代表选区编码，不代表真实截图/识别总耗时。
+- 显式原生截图测试已尝试，执行环境无法连接桌面会话总线，未获得真实门户耗时；不能据此宣称用户桌面延迟已解决。通过 LUMIN_CAPTURE_TRACE=1 可在用户桌面区分系统取屏、解码、窗口准备、编码与 OCR。
+- 0.11.1 Linux tar/deb/rpm 与 Windows 便携 ZIP 已生成，tar/ZIP 随包 OCR、ZIP 完整性、Windows PE AMD64 标记通过。
+
+## 0.12.0 选中文字翻译（SEL-01）
+
+- 全量 Go 测试（含真实 PP-OCR 包）通过；selection/desktop/config race、Go vet、MyGo vet 通过。
+- Linux AT-SPI 活跃窗口/焦点与祖先文本委托回归通过；不读取非活跃窗口和无关兄弟选区，空选区不回退旧文本；循环和 Unicode 20000 字符边界有测试。
+- 窗口测试覆盖先获取选区再弹窗、直接翻译到小窗、无剪贴板读取/写入、失败不翻译旧内容、重复触发、取消和迟到结果；旧 v1 快捷键 JSON 键/禁用状态兼容测试通过。
+- 已检查 1100×800 热键页面渲染，标签为选中文字翻译，显示平台实际按键和无需复制的提示；剪贴板监听控件及订阅移除。
+- Windows amd64、macOS arm64 原生选区代码应用交叉编译通过；真实系统和应用覆盖尚未验证。当前执行环境无法访问桌面会话总线，不能宣称 Linux 取词已实机通过。
+- Linux 0.12.0 tar/deb/rpm、Windows amd64 便携 ZIP 已生成；随包 OCR、ZIP 完整性和 PE AMD64 检查通过。原生接口、权限和验收步骤见 selection-translation.md。
+
+### 0.11.1 用户截图日志补充
+
+用户反馈速度改善，并提供 /tmp/lumin-capture.log 的 5 次记录：screen 467–734ms，平均 625.8ms，其中 decode-screen 平均 95.8ms；show-overlay 平均 6.2ms、选区编码平均 1.2ms、OCR 平均 130ms。约 530ms 位于解码之外的取屏链路，尚无更细阶段归因；不把框选等待或系统首帧呈现算作这些计时覆盖范围。
+
+## 0.12.1 VS Code / Wayland 取词修复
+
+用户确认 0.12.0 在 VS Code 中弹窗但选区为空或不对；先前“只用 AT-SPI”方案不能覆盖此应用。新增原生 Wayland PRIMARY 路径，支持 ext-data-control-v1 与 wlr-data-control v2；不可用时再尝试 AT-SPI，明确空选区不回退。对 VS Code 选区发布的约 100ms 调度延迟，保留源焦点等待 120ms 再读取。失败清空旧原文，避免误以为获取成功。
+
+- 全量 Go 测试（含真实 OCR 包）、Go vet、MyGo vet 通过；desktop race 通过。
+- 模拟合成器使用真实 Unix socket / SCM_RIGHTS 文件描述符传输，ext/wlr 两协议成功取词、普通 CLIPBOARD 与 PRIMARY 隔离、空/缺失/非文本选区、分帧、取消和回退策略通过。
+- race 检查发现 FD deadline 与 context timer 同时到期时错误类型不稳定；已统一到期语义，selection race 连续 10 轮通过。
+- 0.12.1 Linux tar/deb/rpm 与 Windows amd64 便携包已生成，检查随包 OCR、ZIP 完整性、PE AMD64 通过。
+- 当前环境不能访问真实 Wayland 合成器；以上是协议模拟与构建证据，不能宣称 VS Code 真机验收通过。新版本启用 LUMIN_CAPTURE_TRACE 或 LUMIN_SELECTION_TRACE 后记录触发/后端/耗时与错误，不记录选中文字，便于后续复验。
+
+## 0.13.0 翻译窗口交互与外观（UI-05 / UI-06 / UX-01）
+
+- 用户已确认 0.12.1 在 VS Code 取词成功；本轮保留该读取路径，并增加读取新选区期间的失焦保护。
+- 全量 Go 测试含真实 OCR 通过；desktop/bootstrap/config race、Go vet、MyGo vet 通过。
+- 窗口策略覆盖默认自动隐藏/关闭开关/置顶、取消任务但保留内容、重新聚焦/截图/隐藏/退出过滤；真实 timer + 主线程派发队列验证旧回调不能隐藏新的交互。
+- 配置测试覆盖 v1 缺省与范围、保存/重启/放弃、预设恢复相同默认尺寸、主题保存保留手动大小、字体与外观应用；快捷键差异判断防止外观保存重新授权。
+- 已检查浅色/深色翻译窗与设置页渲染。460×480、520×620、640×720 下核心控件边界与原文折叠额外帧通过；正文/次要文字/错误文字/主按钮的双主题配色对比至少 4.5:1。
+- Linux/Windows amd64 0.13.0 发布构建及 macOS arm64 应用交叉编译通过；Linux tar 与 Windows ZIP 含默认 OCR，ZIP 完整性与 PE AMD64 校验通过。
+- 当前执行环境不能连接用户真实桌面；OnBlur/AlwaysOnTop、系统主题动态变化、原生菜单/标题栏与退出后尺寸记忆仍待各系统真机验收。ui.Tester 图像和交叉编译不能替代这些桌面集成验证。规则与验收矩阵见 ux.md。
+
+## 0.13.1 紧凑阅读布局
+
+- 使用 MyGo 原生控件实现默认 350×420 的紧凑阅读布局，原文摘要与译文卡片分区。
+- 全量 CGO_ENABLED=0 go test ./...、Go vet、MyGo vet、git diff --check 通过。本轮未改变 OCR 执行链；未重复运行需显式开启的真实模型集成测试。
+- 新增 320×360、350×420、420×520 双主题回归：首个译文位于首屏上部、主要按钮可见、正确复制、编辑与阅读模式额外构建帧不丢失内容；有效请求进入阅读模式，缺少服务仍留在编辑模式，手动输入入口重新聚焦。
+- 已人工查看 浅色与深色紧凑窗口渲染。Linux amd64 tar/deb/rpm 与 Windows amd64 发布构建成功；Windows ZIP 完整性、PE AMD64 和 Linux tar 随包 OCR 检查通过。
+- 保留旧版配置尺寸与原生窗口大小记忆；已有用户需在「翻译设置 → 紧凑 → 保存设置」应用 350×420。实际桌面标题栏、焦点/置顶等平台行为仍需真机确认。
+
+## GitHub 源码整理（2026-11-24）
+
+- 移除旧应用参考源码目录、过时迁移清单、编辑器工作区文件和旧版本发布归档；保留当前 Lumin 代码、测试、图标、插件源码、来源与许可证。旧归档共 11 个，约 124.2 MiB；最新版产物与资源下载缓存保留在忽略目录。
+- 插件导入只使用统一 .luminext 校验，移除旧扩展名特判；相应回归通过。移除界面和当前维护文档中的旧应用品牌与失效路径，窗口文档改为 Lumin 自身职责说明。
+- 扩充 .gitignore，覆盖构建、开发缓存、生成 OCR 包、本地配置、备份、凭据目录、编辑器文件和日志。新增 publishing.md 记录源码范围、构建和提交检查。
+- 154 个当前可发布文件检查中无超过 10 MiB 的文件；常见私钥/GitHub/AWS/OpenAI 凭据格式扫描无命中。此检查针对工作树，不涵盖历史提交，也不代表完整密钥审计。彩云源码中的公共客户端默认参数按原有来源说明保留。
+- 本地 Markdown 链接检查、全量 CGO_ENABLED=0 go test ./...、Go vet、MyGo vet、git diff --check 通过。
+- go mod tidy 因模块缓存只读且缺少上游测试依赖未完成；未删除或升级依赖，仅将直接导入的 purego、x/sys 归入直接依赖组。现有模块可完成以上全部测试和静态检查。
+- 当前环境禁止写入 Git 索引；原已跟踪的 .agents 仍需维护者运行 git rm -r --cached .agents，再 git add -A 统一暂存新增实现与删除文件。未创建提交、改写历史或上传远程。

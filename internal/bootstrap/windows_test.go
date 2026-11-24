@@ -87,3 +87,53 @@ func TestCaptureDefersRequestsAndHonorsDismissalAndQuit(t *testing.T) {
 		t.Fatal("capture reopened windows during quit")
 	}
 }
+
+func TestRecognitionWindowCaptureAndLifecycle(t *testing.T) {
+	for _, visible := range []bool{false, true} {
+		recognition := &fakeWindow{visible: visible}
+		w := windowSet{preferences: &fakeWindow{}, translator: &fakeWindow{}, recognizer: recognition}
+		w.beginCapture()
+		if recognition.visible {
+			t.Fatal("recognition included in screenshot")
+		}
+		w.endCapture()
+		if recognition.visible != visible || recognition.focused != 0 {
+			t.Fatal("wrong recognition restore")
+		}
+		w.beginCapture()
+		w.show(recognition)
+		if recognition.visible {
+			t.Fatal("show during screenshot")
+		}
+		w.endCapture()
+		if !recognition.visible {
+			t.Fatal("deferred OCR lost")
+		}
+		w.beginCapture()
+		w.hideOnClose(recognition)
+		w.endCapture()
+		if recognition.visible {
+			t.Fatal("dismissed recognition restored")
+		}
+		w.quitting = true
+		if w.hideOnClose(recognition) {
+			t.Fatal("recognition blocked quit")
+		}
+	}
+}
+
+func TestCaptureOnlyWaitsWhenVisibleSurfaceWasHidden(t *testing.T) {
+	for bits := 0; bits < 8; bits++ {
+		w := windowSet{
+			preferences: &fakeWindow{visible: bits&1 != 0},
+			translator:  &fakeWindow{visible: bits&2 != 0},
+			recognizer:  &fakeWindow{visible: bits&4 != 0},
+		}
+		if needsSettle := w.beginCapture(); needsSettle != (bits != 0) {
+			t.Fatalf("visibility %03b: settle=%v", bits, needsSettle)
+		}
+		if w.preferences.IsVisible() || w.translator.IsVisible() || w.recognizer.IsVisible() {
+			t.Fatal("visible window was not hidden")
+		}
+	}
+}

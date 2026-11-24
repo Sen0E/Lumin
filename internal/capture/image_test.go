@@ -52,3 +52,24 @@ func TestSelectionOriginalPixels(t *testing.T) {
 		t.Fatal("temporary screenshot leaked")
 	}
 }
+
+// Screenshot-like RGB gradients and text edges exercise the real temporary
+// file path; keep this benchmark when changing image formats or compression.
+func BenchmarkTempPNGFullHD(b *testing.B) {
+	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	for y := 0; y < 1080; y++ {
+		for x := 0; x < 1920; x++ {
+			i := img.PixOffset(x, y)
+			v := byte((x/8 + y/16) % 256)
+			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = v, byte(x/16), byte(y/8), 255
+		}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		_, cleanup, err := TempPNG(img)
+		cleanup()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

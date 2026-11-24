@@ -30,18 +30,26 @@ type Provider struct {
 }
 
 type Config struct {
-	Version            int               `json:"version"`
-	Source             string            `json:"source"`
-	Target             string            `json:"target"`
-	TimeoutSeconds     int               `json:"timeout_seconds"`
-	HistoryLimit       int               `json:"history_limit"`
-	SaveHistory        bool              `json:"save_history"`
-	Providers          []Provider        `json:"providers"`
-	InputShortcut      string            `json:"input_shortcut"`
-	ClipboardShortcut  string            `json:"clipboard_shortcut"`
-	ServerEnabled      bool              `json:"server_enabled"`
-	ServerAddress      string            `json:"server_address"`
-	ServerToken        string            `json:"server_token,omitempty"`
+	Version               int        `json:"version"`
+	Source                string     `json:"source"`
+	Target                string     `json:"target"`
+	TimeoutSeconds        int        `json:"timeout_seconds"`
+	HistoryLimit          int        `json:"history_limit"`
+	SaveHistory           bool       `json:"save_history"`
+	Appearance            string     `json:"appearance,omitempty"`
+	TranslationWidth      int        `json:"translation_width,omitempty"`
+	TranslationHeight     int        `json:"translation_height,omitempty"`
+	TranslationFontSize   int        `json:"translation_font_size,omitempty"`
+	KeepTranslationOnBlur bool       `json:"keep_translation_on_blur,omitempty"`
+	Providers             []Provider `json:"providers"`
+	InputShortcut         string     `json:"input_shortcut"`
+	// Keep the v1 JSON key for existing settings and backups; the action now reads a selection.
+	SelectionShortcut string `json:"clipboard_shortcut"`
+	ServerEnabled     bool   `json:"server_enabled"`
+	ServerAddress     string `json:"server_address"`
+	ServerToken       string `json:"server_token,omitempty"`
+	OCRDisabled       bool   `json:"ocr_disabled,omitempty"`
+	// OCRLanguages is retained for legacy plugin requests; new plugins own language settings.
 	OCRLanguages       string            `json:"ocr_languages"`
 	ScreenshotShortcut string            `json:"screenshot_shortcut,omitempty"`
 	OCRPlugin          string            `json:"ocr_plugin,omitempty"`
@@ -50,8 +58,8 @@ type Config struct {
 
 func Default() Config {
 	return Config{Version: Version, Source: "auto", Target: "zh", TimeoutSeconds: 60,
-		HistoryLimit: 500, SaveHistory: true, InputShortcut: "CmdOrCtrl+Alt+Space",
-		ClipboardShortcut: "CmdOrCtrl+Alt+T", ScreenshotShortcut: "CmdOrCtrl+Alt+S", ServerAddress: "127.0.0.1:60828", OCRLanguages: "eng+chi_sim",
+		HistoryLimit: 500, SaveHistory: true, TranslationWidth: 350, TranslationHeight: 420, TranslationFontSize: 16, InputShortcut: "CmdOrCtrl+Alt+Space",
+		SelectionShortcut: "CmdOrCtrl+Alt+T", ScreenshotShortcut: "CmdOrCtrl+Alt+S", ServerAddress: "127.0.0.1:60828",
 		Providers: []Provider{
 			{ID: "compatible", Name: "兼容 Chat Completions", Kind: "compatible", Endpoint: "https://api.openai.com/v1/chat/completions", APIKeyEnv: "OPENAI_API_KEY"},
 			{ID: "ollama", Name: "Ollama 本地模型", Kind: "ollama", Endpoint: "http://127.0.0.1:11434/api/chat", Model: "qwen2.5:7b"},
@@ -82,6 +90,18 @@ func (c Config) Validate() error {
 	}
 	if c.HistoryLimit < 1 || c.HistoryLimit > 5000 {
 		return errors.New("历史记录上限须为 1–5000")
+	}
+	if c.Appearance != "" && c.Appearance != "system" && c.Appearance != "light" && c.Appearance != "dark" {
+		return errors.New("外观主题须为跟随系统、浅色或深色")
+	}
+	if c.TranslationWidth != 0 && (c.TranslationWidth < 320 || c.TranslationWidth > 1600) {
+		return errors.New("翻译窗口默认宽度须为 320–1600")
+	}
+	if c.TranslationHeight != 0 && (c.TranslationHeight < 360 || c.TranslationHeight > 1200) {
+		return errors.New("翻译窗口默认高度须为 360–1200")
+	}
+	if c.TranslationFontSize != 0 && (c.TranslationFontSize < 12 || c.TranslationFontSize > 24) {
+		return errors.New("译文字号须为 12–24")
 	}
 	if len(c.Providers) > 16 {
 		return errors.New("最多配置 16 个翻译服务")
@@ -132,7 +152,7 @@ func (c Config) Validate() error {
 		}
 	}
 	shortcuts := map[string]bool{}
-	for _, key := range []string{c.InputShortcut, c.ClipboardShortcut, c.ScreenshotShortcut} {
+	for _, key := range []string{c.InputShortcut, c.SelectionShortcut, c.ScreenshotShortcut} {
 		if key == "" {
 			continue
 		}
@@ -144,8 +164,23 @@ func (c Config) Validate() error {
 	if c.OCRPlugin != "" && !pluginapi.ValidRef(c.OCRPlugin) {
 		return errors.New("OCR 插件标识无效")
 	}
-	if strings.TrimSpace(c.OCRLanguages) == "" {
-		return errors.New("OCR 语言不能为空")
-	}
 	return nil
+}
+
+// Zero values preserve compatibility with earlier version-1 settings/backups.
+func (c Config) TranslationSize() (width, height int) {
+	width, height = c.TranslationWidth, c.TranslationHeight
+	if width == 0 {
+		width = 350
+	}
+	if height == 0 {
+		height = 420
+	}
+	return
+}
+func (c Config) ResultFontSize() int {
+	if c.TranslationFontSize == 0 {
+		return 16
+	}
+	return c.TranslationFontSize
 }

@@ -19,7 +19,7 @@ func (a *App) validatePlugins(cfg config.Config) error {
 			}
 		}
 	}
-	if cfg.OCRPlugin != "" {
+	if cfg.OCRPlugin != "" && !cfg.OCRDisabled {
 		return a.ports.Plugins.ValidateUse(cfg.OCRPlugin, "recognize", cfg.OCRSettings)
 	}
 	return nil
@@ -84,7 +84,7 @@ func (a *App) pluginUsed(ref string) bool {
 }
 
 func (a *App) uninstallPlugin(ref string) {
-	if a.pluginBusy || a.busy || a.probe.Busy || a.saving || a.pluginUsed(ref) {
+	if a.pluginBusy || a.busy || a.recognition.busy || a.ocrProbe.Busy || a.probe.Busy || a.saving || a.pluginUsed(ref) {
 		a.status = "请先移除使用此插件的服务或 OCR 设置，并保存"
 		return
 	}
@@ -166,7 +166,7 @@ func (a *App) pluginsView(c *ui.Context) {
 	ui.Scroll(c.Key("plugins-list")).Grow(1).Children(func() {
 		ui.Column(c).Gap(16).Children(func() {
 			if len(a.installed) == 0 {
-				ui.Text(c, "暂无插件。开发协议、示例和 Pot 迁移说明见 docs/plugins.md。").TextColor(t.TextMuted)
+				ui.Text(c, "暂无插件。开发协议与示例见 docs/plugins.md。").TextColor(t.TextMuted)
 			}
 			for _, m := range a.installed {
 				supported := m.Entrypoints[runtime.GOOS+"/"+runtime.GOARCH] != ""
@@ -183,21 +183,19 @@ func (a *App) pluginsView(c *ui.Context) {
 						if m.Has("translate") {
 							ui.Button(c, "添加翻译服务").Disabled(!supported || a.saving || a.pluginBusy || len(a.draft.Providers) >= 16).OnClick(func() {
 								a.draft.Providers = append(a.draft.Providers, config.Provider{ID: rand.Text(), Name: m.Name, Kind: "plugin", Plugin: m.Ref(), Settings: defaults(m)})
-								a.page = "翻译服务"
+								a.page, a.servicePage = "服务设置", "翻译服务"
 								a.status = "请填写插件设置，勾选启用后保存服务"
 							})
 						}
 						if m.Has("recognize") {
 							ui.Button(c, "用于 OCR").Disabled(!supported || a.saving || a.pluginBusy).OnClick(func() {
-								a.draft.OCRPlugin = m.Ref()
-								a.draft.OCRSettings = defaults(m)
-								a.pluginEditors = nil
-								a.page = "设置"
+								a.selectOCR(m.Ref())
+								a.page, a.servicePage = "服务设置", "OCR 服务"
 								a.status = "请填写 OCR 插件设置并保存"
 							})
 						}
 						ui.Spacer(c)
-						ui.Button(c, "卸载").Disabled(a.pluginBusy || a.busy || a.probe.Busy || a.saving || a.pluginUsed(m.Ref())).OnClick(func() { a.confirmUninstall = m.Ref() })
+						ui.Button(c, "卸载").Disabled(a.pluginBusy || a.busy || a.recognition.busy || a.ocrProbe.Busy || a.probe.Busy || a.saving || a.pluginUsed(m.Ref())).OnClick(func() { a.confirmUninstall = m.Ref() })
 					})
 					if a.pluginUsed(m.Ref()) {
 						ui.Text(c, "已被设置引用；移除引用并保存后可卸载。").FontSize(12).TextColor(t.TextMuted)
@@ -205,7 +203,7 @@ func (a *App) pluginsView(c *ui.Context) {
 					if a.confirmUninstall == m.Ref() {
 						ui.Row(c).Gap(8).Children(func() {
 							ui.Button(c, "保留插件").OnClick(func() { a.confirmUninstall = "" })
-							ui.Button(c, "确认卸载").Disabled(a.pluginBusy || a.busy || a.probe.Busy || a.saving).OnClick(func() { a.uninstallPlugin(m.Ref()) })
+							ui.Button(c, "确认卸载").Disabled(a.pluginBusy || a.busy || a.recognition.busy || a.ocrProbe.Busy || a.probe.Busy || a.saving).OnClick(func() { a.uninstallPlugin(m.Ref()) })
 						})
 					}
 				})

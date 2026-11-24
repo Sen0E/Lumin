@@ -14,7 +14,7 @@ func TestPluginFieldsSurviveFramesAndDiscard(t *testing.T) {
 	a.installed = []plugin.Manifest{{Schema: 1, ID: "test.translate", Version: "1.0.0", Name: "Test plugin", Fields: []plugin.Field{{Key: "token", Label: "插件令牌", Secret: true}}}}
 	a.settings.Providers = []config.Provider{{ID: "plugin-one", Name: "Test plugin", Kind: "plugin", Plugin: "test.translate@1.0.0", Settings: map[string]string{"token": ""}}}
 	a.draft = a.settings.Clone()
-	a.page = "翻译服务"
+	a.page = "服务设置"
 	tt := ui.NewTester(a.View, 1100, 800)
 	click(t, tt, "插件设置：插件令牌")
 	tt.Type("test-key")
@@ -32,8 +32,9 @@ func TestPluginFieldsSurviveFramesAndDiscard(t *testing.T) {
 	if a.draft.Providers[0].Settings["token"] != "test-key" {
 		t.Fatal("navigation lost plugin values")
 	}
-	click(t, tt, "设置")
+	click(t, tt, "常规设置")
 	click(t, tt, "放弃未保存修改")
+	click(t, tt, "服务设置")
 	click(t, tt, "翻译服务")
 	if a.draft.Providers[0].Settings["token"] != "" {
 		t.Fatal("discard did not restore settings")

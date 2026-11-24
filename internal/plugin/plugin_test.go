@@ -118,7 +118,7 @@ func TestArchiveValidationAndVersionedInstall(t *testing.T) {
 	if len(list) != 1 || list[0].Version != "1.0.0" {
 		t.Fatal(list)
 	}
-	if _, err := Inspect("anything.potext"); err == nil || !strings.Contains(err.Error(), "Tauri") {
+	if _, err := Inspect("anything.zip"); err == nil || !strings.Contains(err.Error(), ".luminext") {
 		t.Fatal(err)
 	}
 }
@@ -178,34 +178,10 @@ func TestDeclaredSettingsAndEnvironment(t *testing.T) {
 		t.Fatalf("%v %v", values, err)
 	}
 	t.Setenv("LUMIN_TEST_SECRET", "should-not-leak")
-	for _, v := range pluginEnv() {
+	for _, v := range pluginEnv(t.TempDir(), t.TempDir()) {
 		if strings.HasPrefix(v, "LUMIN_TEST_SECRET=") {
 			t.Fatal("inherited unrelated secret")
 		}
-	}
-}
-
-// Set LUMIN_TEST_OCR_PLUGIN to a package produced by scripts/build-plugins.sh.
-func TestBuiltOCRExample(t *testing.T) {
-	file := os.Getenv("LUMIN_TEST_OCR_PLUGIN")
-	if file == "" {
-		t.Skip("build example packages to run integration test")
-	}
-	manager, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, err := manager.Install(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, err := filepath.Abs("../ocr/testdata/english.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, err := manager.Call(context.Background(), manifest.Ref(), Request{Operation: "recognize", ImagePath: path, Languages: "eng"})
-	if err != nil || !strings.Contains(text, "Lumin translation test") {
-		t.Fatalf("OCR plugin: %q %v", text, err)
 	}
 }
 
@@ -267,4 +243,22 @@ func TestBuiltCaiyunPackage(t *testing.T) {
 		t.Fatalf("packaged program/stdio validation failed: %v", err)
 	}
 	t.Log("Installed package executed and returned its structured language error through JSON stdio")
+}
+
+func TestPluginPathIsPrivate(t *testing.T) {
+	t.Setenv("PATH", "/user/installed/tools")
+	root := t.TempDir()
+	entry := filepath.Join(root, "bin")
+	found := false
+	for _, v := range pluginEnv(root, entry) {
+		if strings.HasPrefix(v, "PATH=") {
+			found = true
+			if strings.Contains(v, "/user/installed/tools") || !strings.Contains(v, entry) {
+				t.Fatal("inherited host tools", v)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing private plugin path")
+	}
 }

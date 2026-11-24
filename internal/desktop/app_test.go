@@ -2,7 +2,9 @@ package desktop
 
 import (
 	"context"
+	"image"
 	"image/png"
+	"lumin/internal/capture"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,33 +64,24 @@ func TestNavigationTypingAndClipboard(t *testing.T) {
 		t.Fatalf("lost input %q", a.text)
 	}
 	click(t, tt, "翻译文本")
-	if preferencesOpened != 0 || a.page != "设置" || !strings.Contains(a.status, "请先") {
+	if preferencesOpened != 0 || a.page != "常规设置" || !strings.Contains(a.status, "请先") {
 		t.Fatal("unconfigured translation must explain the problem in the small window")
 	}
 	click(t, tt, "配置翻译服务")
 	main.Frame()
-	if preferencesOpened != 1 || a.page != "翻译服务" {
+	if preferencesOpened != 1 || a.page != "服务设置" {
 		t.Fatal("configuration link did not open preferences")
-	}
-	for _, page := range []string{"历史记录", "生词本", "翻译"} {
-		click(t, tt, page)
-		tt.Frame()
-		tt.Frame()
-		main.Frame()
-		if a.translationPage != page || a.page != "翻译服务" {
-			t.Fatal("window navigation leaked")
-		}
 	}
 	for _, page := range pages {
 		click(t, main, page)
 		main.Frame()
 		main.Frame()
 		tt.Frame()
-		if a.page != page || a.translationPage != "翻译" {
+		if a.page != page || a.text != "Hello 世界" {
 			t.Fatal("preferences changed translation navigation")
 		}
 		for _, text := range main.Texts() {
-			if text == "历史记录" || text == "翻译文本" || text == "截图翻译" || text == "粘贴" {
+			if text == "翻译文本" || text == "截图翻译" || text == "粘贴" {
 				t.Fatalf("preferences contains translation control %q", text)
 			}
 		}
@@ -176,22 +169,25 @@ func (testOCR) Recognize(context.Context, string, string) (string, error) {
 func TestOCRSuccessSurvivesWorkerCancellation(t *testing.T) {
 	a, q := testApp(t)
 	a.ocr = testOCR{}
-	a.ports.ChooseImage = func() (string, error) { return "example.png", nil }
-	a.recognizeImage()
-	drainUntil(t, q, func() bool { return !a.busy })
-	if a.text != "Recognized text" {
-		t.Fatalf("OCR text %q status %q", a.text, a.status)
+	path, cleanup, err := capture.TempPNG(image.NewRGBA(image.Rect(0, 0, 30, 20)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	a.ports.ChooseImage = func() (string, error) { return path, nil }
+	a.RecognizeImage()
+	drainUntil(t, q, func() bool { return !a.recognition.busy })
+	if a.recognition.text != "Recognized text" || a.recognition.bitmap == nil {
+		t.Fatalf("OCR text %q status %q", a.recognition.text, a.recognition.status)
 	}
 }
 
 func TestOwnClipboardWritesDoNotTranslate(t *testing.T) {
 	a, _ := testApp(t)
-	a.watchClipboard = true
 	clip := ""
 	a.ports.WriteClipboard = func(s string) { clip = s }
 	a.ports.ReadClipboard = func() string { return clip }
 	a.copy("translation")
-	a.ClipboardChanged()
 	if a.text != "" || a.busy {
 		t.Fatal("copy triggered translation loop")
 	}
@@ -210,7 +206,7 @@ func TestRenderPages(t *testing.T) {
 			if bounds, ok := tt.Find("Lumin"); !ok || bounds.Y > 80 {
 				t.Fatalf("sidebar not aligned to top: %+v", bounds)
 			}
-			if page == "翻译服务" {
+			if page == "服务设置" {
 				if bounds, ok := tt.Find("保存服务"); !ok || bounds.Y < 0 || bounds.Y+bounds.H > float32(size.h) {
 					t.Fatalf("save button outside window: %+v", bounds)
 				}
@@ -230,7 +226,6 @@ func TestRenderPages(t *testing.T) {
 			}
 		}
 	}
-	a.translationPage = "翻译"
 	a.text = "Translation helps us understand each other."
 	a.results = []domain.Result{{ProviderID: "one", ProviderName: "Ollama", Text: "翻译帮助我们理解彼此。", DurationMS: 1200}, {ProviderID: "two", ProviderName: "DeepL", Error: "翻译服务返回 HTTP 403，请检查密钥、模型、配额和接口地址"}}
 	tt := ui.NewTester(a.TranslationView, 520, 620)

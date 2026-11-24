@@ -61,7 +61,7 @@ func TestProbeUsesDisabledDraftWithoutSavingOrChangingTranslation(t *testing.T) 
 	if err != nil || len(history) != 0 {
 		t.Fatal("probe persisted history")
 	}
-	if _, err := os.Stat(filepath.Join(a.store.Dir(), "config.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(a.store.Dir(), "state.json")); !os.IsNotExist(err) {
 		t.Fatal("probe saved configuration")
 	}
 }
@@ -171,7 +171,7 @@ func TestProbeTimeoutAndFailure(t *testing.T) {
 
 func TestProviderReorderKeepsIdentityAndPersists(t *testing.T) {
 	a, q := testApp(t)
-	a.page = "翻译服务"
+	a.page = "服务设置"
 	ids := []string{a.draft.Providers[0].ID, a.draft.Providers[1].ID}
 	tt := ui.NewTester(a.View, 1100, 800)
 	click(t, tt, "下移服务："+ids[0])
@@ -205,7 +205,7 @@ func TestProviderReorderKeepsIdentityAndPersists(t *testing.T) {
 
 func TestRenderServiceProbe(t *testing.T) {
 	a, _ := probeApp(t)
-	a.page = "翻译服务"
+	a.page = "服务设置"
 	a.probe = serviceProbe{Provider: a.draft.Clone().Providers[0], TimeoutSeconds: a.draft.TimeoutSeconds, Message: "测试成功 · 0.3 秒\n你好，世界！"}
 	for _, width := range []int{1100, 920} {
 		tt := ui.NewTester(a.View, width, 680)
@@ -234,7 +234,7 @@ func TestRenderServiceProbe(t *testing.T) {
 
 func TestProbeButtonAndEscape(t *testing.T) {
 	a, q := probeApp(t)
-	a.page = "翻译服务"
+	a.page = "服务设置"
 	started := make(chan struct{})
 	a.ports.Translators = func(config.Config) []domain.Translator {
 		return []domain.Translator{testTranslator{func(ctx context.Context, _ domain.Request) (string, error) {

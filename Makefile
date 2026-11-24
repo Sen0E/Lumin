@@ -19,7 +19,7 @@ vet:
 check: test vet
 
 build:
-	go tool mygo build -platform linux/amd64
+	./scripts/build-release.sh linux/amd64
 
 plugins:
 	./scripts/build-plugins.sh

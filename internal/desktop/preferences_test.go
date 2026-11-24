@@ -21,7 +21,7 @@ func numberInput(t *testing.T, tt *ui.Tester, label, text string) {
 }
 func TestPreferencesEditSaveAndRestart(t *testing.T) {
 	a, q := testApp(t)
-	a.page = "设置"
+	a.page = "翻译设置"
 	a.text = "unsaved translation input"
 	tt := ui.NewTester(a.View, 1100, 800)
 	numberInput(t, tt, "请求超时输入", "42")
@@ -55,7 +55,7 @@ func TestPreferencesEditSaveAndRestart(t *testing.T) {
 }
 func TestPreferencesBoundsAndDiscard(t *testing.T) {
 	a, _ := testApp(t)
-	a.page = "设置"
+	a.page = "翻译设置"
 	tt := ui.NewTester(a.View, 920, 680)
 	numberInput(t, tt, "请求超时输入", "20")
 	numberInput(t, tt, "请求超时输入", "301")
@@ -69,8 +69,8 @@ func TestPreferencesBoundsAndDiscard(t *testing.T) {
 	if a.draft.TimeoutSeconds != 60 || a.preferences.Timeout != 60 || a.preferences.History != 500 {
 		t.Fatal("discard lost editor synchronization")
 	}
-	click(t, tt, "翻译服务")
-	click(t, tt, "设置")
+	click(t, tt, "服务设置")
+	click(t, tt, "翻译设置")
 	tt.Frame()
 	if a.preferences.Timeout != 60 {
 		t.Fatal("navigation restored stale preferences")

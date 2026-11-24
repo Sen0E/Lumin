@@ -1,5 +1,47 @@
+# Build output and MyGo development cache
 /build/
+/dist/
 /.mygo/
-mygo_windows_*.syso
 /lumin
+/lumin.exe
+/mygo_windows_*.syso
+*.test
+*.test.exe
 /coverage.out
+/coverage/
+
+# Generated OCR bundles (recreated by scripts/build-release.sh)
+/resources/*/bundled-ocr.luminext
+
+# Local configuration, credentials and application data
+/.aws/
+/.codex/
+/.agents/
+.env
+.env.*
+!.env.example
+*.luminbackup
+/config.json
+/history.json
+/window-state.json
+
+# Editor and operating-system files
+/.idea/
+/.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python build-script cache and local diagnostics
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.bak
+
+# Upstream reference checkouts are not part of this repository
+/pot-desktop-*/

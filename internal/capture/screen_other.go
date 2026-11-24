@@ -7,4 +7,4 @@ import (
 	"image"
 )
 
-func Screen(context.Context) (image.Image, error) { return nil, ErrUnavailable }
+func Screen(context.Context, DisplayTarget) (image.Image, error) { return nil, ErrUnavailable }

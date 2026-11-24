@@ -89,11 +89,10 @@ func (m *Manager) Call(ctx context.Context, ref string, request Request) (string
 	cmd.Dir = dir
 	cmd.Stdin = bytes.NewReader(append(data, '\n'))
 	cmd.WaitDelay = time.Second
-	cmd.Env = pluginEnv()
-	configureProcess(cmd)
+	cmd.Env = pluginEnv(dir, filepath.Dir(exe))
 	out, stderr := &boundedOutput{limit: 2 << 20, cancel: cancel}, &boundedOutput{limit: 64 << 10, cancel: cancel}
 	cmd.Stdout, cmd.Stderr = out, stderr
-	err = cmd.Run()
+	err = runProcess(cmd)
 	if out.exceeded || stderr.exceeded {
 		return "", errors.New("插件输出超出限制")
 	}
@@ -147,9 +146,10 @@ func truncate(s string, n int) string {
 	return s
 }
 
-func pluginEnv() []string {
-	var env []string
-	for _, key := range []string{"PATH", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL"} {
+func pluginEnv(root, entryDir string) []string {
+	// Helpers may be supplied by the plugin, never resolved from the host PATH.
+	env := []string{"PATH=" + strings.Join([]string{entryDir, filepath.Join(root, "bin"), root}, string(os.PathListSeparator))}
+	for _, key := range []string{"SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL"} {
 		if value, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+value)
 		}

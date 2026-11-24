@@ -1,4 +1,4 @@
-# 插件开发与 Pot 迁移
+# 插件开发
 
 Lumin 0.2.0 提供 `.luminext` 插件。插件是 ZIP 包，内含声明文件与各平台的可执行程序；宿主通过 **JSON 标准输入/输出协议 v1** 调用，每个请求启动一个进程。实现语言不限，Go SDK 位于 `pkg/pluginapi`，不依赖 MyGo。
 
@@ -6,13 +6,12 @@ Lumin 0.2.0 提供 `.luminext` 插件。插件是 ZIP 包，内含声明文件�
 
 1. 在「插件」页面选择 `.luminext`。安装只校验并解压，不运行程序。
 2. 翻译插件：点击「添加翻译服务」，填写字段，勾选启用，点击「保存服务」。同一插件可建立多个服务配置。
-3. OCR 插件：点击「用于 OCR」，在设置中填写参数并保存。之后图片识字、截图识字和截图翻译都使用该引擎。可以点击「恢复内置 Tesseract」并保存。
+3. OCR 插件：点击「用于 OCR」，在设置中填写参数并保存。之后图片识字、截图识字和截图翻译都使用该引擎。可在「OCR 服务」选择其他插件或「停用 OCR」并保存；在「OCR 服务」查看已保存引擎。0.9.0 起宿主不再内置 Tesseract 回退。
 4. 升级：安装新版本包，创建或切换到新版本配置，保存并验证，再移除旧服务、卸载旧版。配置固定引用 `id@version`，不会自动升级。
 5. 卸载前须移除已保存配置和草稿中的全部引用；正在执行任务或保存时不能卸载。禁用服务仍然算引用。
 
-插件以当前用户权限执行，**不是沙箱**。只启用自己维护或信任的程序。`secret` 仅控制输入框隐藏显示，字段值仍在本地 `config.json` 明文存储并通过 stdin 传给插件。安装目录没有签名验证和自动更新。首次启用联网插件前应了解它会向何处发送原文或图片。
+插件以当前用户权限执行，**不是沙箱**。只启用自己维护或信任的程序。`secret` 仅控制输入框隐藏显示，字段值仍在本地 `state.json`（0.7.0 起） 明文存储并通过 stdin 传给插件。安装目录没有签名验证和自动更新。首次启用联网插件前应了解它会向何处发送原文或图片。
 
-`.potext` 不能直接安装执行：其 JavaScript 调用依赖 Pot 注入的 Tauri API、HTTP、CryptoJS、数据库或 native 辅助程序。Lumin 采用独立协议，没有嵌入 JavaScript/Tauri 运行时，也没有声称兼容全部 Pot 生态。格式迁移见下文。
 
 ## 包结构
 
@@ -95,12 +94,11 @@ func main() {
 }
 ```
 
-维护中的插件与两个示例：
+维护中的插件与示例：
 
-- `plugins/caiyun`：[彩云小译 Pot 插件的 Go 移植](../plugins/caiyun/README.md)，默认沿用上游客户端参数；包内附 GPL 许可、出处与对应构建源码。
-
+- `plugins/caiyun`：[彩云小译插件](../plugins/caiyun/README.md)，默认沿用上游客户端参数；包内附 GPL 许可、出处与对应构建源码。
+- `plugins/ppocrv6-tiny`：[PP-OCRv6 tiny 离线 OCR 插件](../plugins/ppocrv6-tiny/README.md)，自带检测/识别 ONNX、字典和 RapidOCRLite CPU 运行库；不需要 Python 或 Tesseract。该运行库只支持这一专用管线，不是通用 ONNX Runtime。
 - `examples/plugins/libretranslate`：实际 HTTP 翻译适配，需提供可用的 LibreTranslate 服务；不是离线模型。
-- `examples/plugins/tesseract`：调用已安装的 Tesseract，使用应用 OCR 语言设置；用于展示完整 OCR 协议。
 
 构建插件包（脚本需要 Bash 和 Python 3）：
 
@@ -108,11 +106,17 @@ func main() {
 make plugins
 # 只构建彩云插件
 ./scripts/build-plugins.sh caiyun
+# 构建 PP-OCRv6 tiny（首次需要联网下载并校验固定资产）
+./scripts/build-plugins.sh ppocrv6-tiny
+# 指定目标平台
+GOOS=windows GOARCH=amd64 ./scripts/build-plugins.sh ppocrv6-tiny
 # 可交叉编译单平台包
 GOOS=windows GOARCH=amd64 ./scripts/build-plugins.sh
 ```
 
 输出到 `build/plugins/`，文件名含平台。脚本可重复运行，重新生成 build 目录下的同名产物；已安装版本仍不允许覆盖。正式修改插件后应提升版本，构建脚本读取清单版本生成文件名。
+
+PP-OCRv6 tiny 由 `scripts/build-ppocr-plugin.py` 准备模型、字典、原生库和许可证，并只提供 Linux amd64 / Windows amd64 包；构建资产由 `plugins/ppocrv6-tiny/assets.lock.json` 固定 SHA-256。Windows 包目前只做交叉构建和包检查，Linux/macOS ARM 与 Windows 实机识别尚未验收。
 
 自行打包已准备好的目录：
 
@@ -121,41 +125,33 @@ go run ./cmd/lumin-plugin-pack -dir /path/to/prepared-plugin \
   -out /path/to/example.translator-1.0.0.luminext
 ```
 
-`plugin.json` 必须位于源目录根部，声明入口必须存在。打包工具校验产物且拒绝覆盖；输出不能在源目录里面。用 `CGO_ENABLED=0 GOOS=... GOARCH=... go build` 生成对应入口；需要 CGO 或外部工具的插件自行记录运行依赖。
+`plugin.json` 必须位于源目录根部，声明入口必须存在。打包工具校验产物且拒绝覆盖；输出不能在源目录里面。用 `CGO_ENABLED=0 GOOS=... GOARCH=... go build` 生成对应入口；插件所需工具、模型和专用运行库必须随包提供，并声明支持的平台；不能要求用户安装命令行工具。
 
 ## 生命周期与限制
 
 - 请求启动独立进程，无持久进程协议、流式输出或宿主数据库访问。
 - 翻译受应用请求超时约束；插件调用自身上限 90 秒，OCR 整体包括截图和框选共 90 秒。SDK 的 context 不接收宿主取消通知，宿主通过终止进程取消。
-- Linux/macOS 创建进程组，取消时终止整组；Windows 尝试 `taskkill /T /F` 并终止主进程。插件不得脱离进程组驻留后台。
+- Linux/macOS 创建进程组，取消时终止整组；Windows 在挂起状态启动插件、加入带 KILL_ON_JOB_CLOSE 的 Job Object 后恢复执行，取消/关闭 Job 时终止整个进程树。插件不得脱离进程组驻留后台。
 - stdout 最多 2 MiB、stderr 最多 64 KiB，超出即取消；子进程退出后管道等待上限 1 秒。
-- 继承环境仅含 PATH、Windows 系统路径、临时目录和语言区域变量；不自动继承宿主 API Key、HOME 或代理环境变量。插件可通过声明字段接收所需设置。这不是权限隔离，程序仍能访问当前用户可访问的系统资源。
+- PATH 仅包含入口目录、插件根目录的 bin 和插件根目录，不继承用户 PATH；其他继承环境仅含 Windows 系统路径、临时目录和语言区域变量；不自动继承宿主 API Key、HOME 或代理环境变量。插件可通过声明字段接收所需设置。这不是权限隔离，程序仍能访问当前用户可访问的系统资源。
 - 包最多 128 MiB、128 个条目、单文件 64 MiB、总解压量 256 MiB；清单最多 64 KiB。拒绝路径穿越、符号链接、大小写重复路径和 Windows 保留设备名。
 - 使用私有暂存目录解压后原子重命名。相同版本拒绝覆盖；安装失败清理暂存目录。文件位于数据目录 `plugins/<id>@<version>/`。
 - 进程崩溃、协议错误、能力不匹配只影响对应服务，其他翻译服务仍可完成。
-
-## 从 Pot 插件迁移
-
-迁移依据是本仓库 `pot-desktop-3.0.7/src/utils/invoke_plugin.js` 与 `src-tauri/src/cmd.rs`，不依赖上游未来行为。
-
-| Pot                                | Lumin                                                    |
-| ---------------------------------- | -------------------------------------------------------- |
-| ZIP `.potext`、`info.json`     | ZIP `.luminext`、`plugin.json`                       |
-| `main.js` 导出 `translate`     | 可执行程序处理 `operation: translate`                  |
-| `recognize(base64, ...)`         | `operation: recognize`，按 `image_path` 读取原始图片 |
-| `needs` 等配置声明               | 清单 `settings`，值在请求 `settings` 中              |
-| 注入的 Tauri `http` / CryptoJS   | 插件自身 HTTP、签名与加密库                              |
-| Pot 的 `run` / 文件 / 数据库 API | 程序自身依赖；当前没有对应宿主 RPC                       |
-| 界面元素、收集到生词本、语音等扩展 | v1 尚未定义能力，需要单独设计协议                        |
-
-建议先迁移纯 HTTP 翻译/OCR 插件：保留请求签名、语言映射与结果解析逻辑，使用标准库重写 I/O，再增加协议入口和清单。不要只重命名包扩展名。对携带二进制的旧插件须核实许可证、平台架构和分发权利。
 
 ## 回归与排错
 
 ```bash
 go test ./internal/plugin ./pkg/pluginapi ./internal/desktop
-LUMIN_TEST_OCR_PLUGIN="$PWD/build/plugins/example.tesseract-1.0.0-linux-amd64.luminext" \
-  go test ./internal/plugin -run TestBuiltOCRExample -count=1
+LUMIN_PPOCR_PACKAGE="$PWD/build/plugins/lumin.ppocrv6-tiny-1.0.0-linux-amd64.luminext" \
+  go test ./plugins/ppocrv6-tiny -v -count=1
 ```
 
-第二条需要先构建示例并安装 Tesseract `eng`。协议测试还使用真正的测试子进程验证错误输出、超大响应与取消，无需联网。服务无法启用先检查清单平台、字段、版本引用；执行失败检查入口架构和依赖。若手动修改导致清单损坏，退出应用，备份后移走对应插件版本目录，再安装原包。
+第二条会安装真实 PP-OCR 包并在清空 `PATH` 后执行模型推理，不需要 Python 或 Tesseract。协议测试还使用真正的测试子进程验证错误输出、超大响应与取消，无需联网。服务无法启用先检查清单平台、字段、版本引用；执行失败检查入口架构和依赖。若手动修改导致清单损坏，退出应用，备份后移走对应插件版本目录，再安装原包。
+
+## 0.9.0 默认 OCR 与诊断
+
+发布包包含 `bundled-ocr.luminext`（固定为 lumin.ppocrv6-tiny@1.0.0），由独立 ocrsetup 在启动时通过现有 Manager 安装，无需执行插件即可完成注册；只在未选择引擎且未主动停用时设为默认。插件协议仍为 v1。语言由插件模型/参数决定，历史 `languages` 字段保留兼容，新配置默认空值。
+
+「OCR 服务」的测试按钮使用当前草稿及固定公开英文样例；不影响运行中识别、翻译、历史或已保存配置。云插件会收到该样例。测试独立 30 秒超时与取消/过期保护；参数改变后旧结果失效。
+
+0.11.0 已删除依赖系统 Tesseract 的历史示例。插件必须自带所需工具；私有 PATH 防止意外依赖本机安装，但不是安全沙箱，不能阻止第三方程序通过绝对路径访问本机。参见 [运行依赖约定](runtime-dependencies.md)。

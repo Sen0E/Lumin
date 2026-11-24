@@ -18,12 +18,15 @@ Lumin/
 │   ├── storage/               # JSON 持久化、原子替换、历史与收藏
 │   ├── capture/               # 系统截图、原图坐标换算、裁剪与临时 PNG
 │   ├── plugin/                # .luminext 校验、安装、版本管理、进程协议
-│   ├── ocr/                   # Recognizer 接口、Tesseract 子进程
+│   ├── ocr/                   # Recognizer 接口、嵌入式固定测试图片
+│   ├── ocrsetup/              # 随包默认 OCR 插件安装与首次配置
 │   ├── localapi/              # 外部调用 HTTP handler，不依赖 MyGo
 │   └── desktop/
 │       ├── app.go             # 主线程状态、后台任务、动作
-│       ├── view.go            # 配置主窗口：服务、插件、设置
-│       ├── translation_window.go # 独立翻译窗口：输入、结果、历史、收藏
+│       ├── view.go            # 主窗口：配置分类、服务、历史
+│       ├── translation_window.go # 独立翻译窗口：原文、语言、译文、置顶
+│       ├── settings_window.go # 分类配置页与服务子页
+│       ├── history_view.go    # 主窗口历史与收藏过滤
 │       ├── selection.go       # 原生截图框选视图
 │       ├── providers.go       # 服务构造、独立测试任务、排序/移除
 │       ├── preferences.go     # 持久数字/语言编辑器与草稿恢复
@@ -32,12 +35,12 @@ Lumin/
 ├── pkg/pluginapi/             # 无框架依赖的公开 JSON 协议与 Go SDK
 ├── cmd/lumin-plugin-pack/      # 插件打包命令
 ├── plugins/caiyun/            # 维护中的彩云翻译插件（GPL-3.0 移植）
-├── examples/plugins/          # 翻译与 OCR 示例
+├── plugins/ppocrv6-tiny/      # 自带模型与推理库的离线 OCR 插件
+├── examples/plugins/          # LibreTranslate 翻译插件示例
 ├── scripts/build-plugins.sh    # 示例与正式插件的跨平台构建
 ├── resources/icon.png         # 应用图标
 ├── docs/                      # 维护文档
-├── Makefile                   # 常用检查与构建命令
-└── pot-desktop-3.0.7/          # 原始参考，保持独立，不参与新应用构建
+└── Makefile                   # 常用检查与构建命令
 ```
 
 根入口保持很薄，而不是为了形式增加 `cmd/lumin`；MyGo 的默认开发和打包命令直接构建根目录。插件打包 CLI 单独位于 `cmd/lumin-plugin-pack`，不改变桌面入口。
@@ -100,7 +103,7 @@ UI 状态只在主线程读写。后台工作只能读取启动时的快照，�
 
 - MyGo 提供窗口、控件、剪贴板、托盘、快捷键、文件选择和单实例。
 - 本版本无自行编写的 Swift/Kotlin/Rust/Zig native module。
-- Tesseract 是独立进程，使用参数数组启动，不拼接 shell；90 秒任务上限，图片上限 20 MiB，输出上限 1 MiB。
+- OCR 通过插件独立进程执行，宿主无 Tesseract 回退；90 秒识别任务上限，图片上限 20 MiB。固定图片测试使用独立任务、30 秒上限。
 - HTTP 翻译服务最大响应 2 MiB，不自动重试、不跟随重定向，避免重复计费和密钥转发。错误不记录上游响应体或密钥。
 - 外部调用仅绑定回环地址，默认关闭；限 POST、令牌鉴权、限制请求大小与队列长度、拒绝浏览器 Origin。
 
@@ -118,8 +121,40 @@ UI 状态只在主线程读写。后台工作只能读取启动时的快照，�
 
 ## 常驻进程与双窗口（0.4.0）
 
-`bootstrap/run.go` 创建两个保留的原生窗口。`desktop.App.View` 只渲染配置，`TranslationView` 渲染小窗口；两者各有导航字段，共享已保存配置、草稿和结果模型，所有修改仍在主线程。OS 操作通过 Ports 的 ShowPreferences / ShowTranslator / HideTranslator / Quit 接入，不从视图直接访问 MyGo App。
+`bootstrap/run.go` 创建两个保留的原生窗口。`desktop.App.View` 渲染配置和历史管理，`TranslationView` 渲染小窗口；主窗口拥有 page 与服务子页 servicePage；翻译窗口没有管理导航，共享已保存配置、草稿和结果模型，所有修改仍在主线程。OS 操作通过 Ports 的 ShowPreferences / ShowTranslator / HideTranslator / Quit 接入，不从视图直接访问 MyGo App。
 
-`bootstrap/windows.go` 管理显示、关闭拦截和截图可见性；只依赖最小 residentWindow 接口，可用假窗口测试。普通 OnClose 隐藏并 PreventDefault；翻译窗口额外取消当前请求。OnBeforeQuit 标记 quitting，让所有窗口正常销毁；OnQuit 才关闭 App 状态、取消根 context、释放快捷键/托盘/剪贴板订阅与 HTTP。关闭设置窗口保留草稿和服务测试，关闭翻译窗口不会终止进程。
+`bootstrap/windows.go` 管理显示、关闭拦截和截图可见性；只依赖最小 residentWindow 接口，可用假窗口测试。普通 OnClose 隐藏并 PreventDefault；翻译窗口额外取消当前请求。OnBeforeQuit 标记 quitting，让所有窗口正常销毁；OnQuit 才关闭 App 状态、取消根 context、释放快捷键/托盘/HTTP。关闭设置窗口保留草稿和服务测试，关闭翻译窗口不会终止进程。
 
-后台结果仍通过保留的配置窗口 Window.Update 发布，即使该窗口隐藏也会执行，然后 Invalidate 翻译窗口。不要在工作线程写模型、根据可见性跳过回调或在 OnClosed 无条件 App.Quit。截图在主线程记录两个窗口的可见性，临时隐藏，结束后只恢复记录的窗口；quitting 时禁止恢复。单实例重启和 Dock 激活（没有可见窗口且不在截图）打开配置；翻译请求、剪贴板和识别成功只打开翻译窗口。
+后台结果仍通过保留的配置窗口 Window.Update 发布，即使该窗口隐藏也会执行，然后 Invalidate 翻译窗口。不要在工作线程写模型、根据可见性跳过回调或在 OnClosed 无条件 App.Quit。截图在主线程记录两个窗口的可见性，临时隐藏，结束后只恢复记录的窗口；quitting 时禁止恢复。单实例重启和 Dock 激活（没有可见窗口且不在截图）打开配置；取词、HTTP 翻译请求和识别成功只打开翻译窗口。
+
+0.5.0 的窗口功能位置以 [window-map.md](window-map.md) 为准。托盘诊断在 `internal/traystatus`，只读会话总线；`desktop/tray.go` 在工作线程检查，并通过 dispatcher 更新独立状态，不能覆盖翻译任务消息。
+
+## 独立识别窗口（0.6.0）
+
+`desktop/recognition_window.go` 持有识别文本、只读图片/Bitmap、独立 generation/cancel 和视图。工作线程负责图片解码、临时 PNG、OCR；经 post/Window.Update 发布预览和结果，过期任务不可写回。重新识别复用内存图片、读取最新已保存配置。翻译仍由原任务处理；仅用户点转翻译才复制识别文本。bootstrap 持有 preferences/translation/recognition 三个业务窗口，统一截图隐藏恢复和真实退出，保留独立 StateKey。
+
+## 原子快照与备份（0.7.0）
+
+`internal/backup` 定义版本化交换格式、只读导入校验、凭据移除和原子文件写入；不依赖 UI/存储。`storage` 持有一个互斥锁保护配置与历史的完整快照，通过临时文件 + fsync + rename 一次提交 `state.json`。旧 config/history 在首次成功写入前读取，迁移后保留但不再参与读取；坏快照不能回退旧数据。
+
+恢复顺序：校验 → 获取存储锁 → 读取旧快照 → 写入可导入的恢复前备份 → 提交新快照 → 递增 revision。任一提交前错误不会替换快照。翻译捕获 revision，AddIfRevision 在锁内拒绝跨恢复代次的迟到结果。桌面 backupState 分离预览和已保存状态，确认时使用内存中的已校验内容，不重读可能被替换的文件。
+
+## 历史删除与导出（0.8.0）
+
+`desktop/history_actions.go` 共用列表筛选逻辑，导出点击时复制当前结果与嵌套 Results 切片；工作线程仅接触不可变快照。`historyexport` 只接收 domain.Entry，不接受配置；负责 CSV/JSON 编码。storage.ExportHistory 复用数据目录导出保护和原子写入。
+
+Delete 在存储锁内按 ID 查找与检查 Favorite，未显式确认收藏时拒绝删除。UI 使用 ID 保留确认目标，取消/搜索/筛选/导航/恢复会清除确认。恢复不能在历史写入或导出期间启动；恢复期间不允许启动历史操作。
+
+## OCR 引擎生命周期（0.9.0）
+
+`ocrsetup.Ensure` 只在单实例锁成功后、创建视图前安装固定的随包插件；不执行识别，不覆盖已有选择或 OCRDisabled。首次配置成功才发布新的 cfg。配置 schema 保持 v1，新增可选 ocr_disabled；旧 ocr_languages 只保留读取和协议兼容。
+
+`desktop/ocr_settings.go` 统一解析 OCR 引擎，运行时只解析已保存配置。诊断独立使用克隆草稿及 generation/cancel，不共享识别或翻译状态；主线程通过 post 接收结果，关窗/保存/恢复/切换引擎会使旧测试失效。
+
+## 运行依赖边界（0.11.0）
+
+宿主只启动插件包内的可执行入口；截图通过 Linux 桌面门户、Windows GDI、macOS 14+ ScreenCaptureKit 在进程内完成。插件使用私有 PATH，专用工具、模型和库随包分发。Unix 用进程组取消，Windows 用 Job Object 在挂起启动时绑定整个进程树。系统图形库、桌面服务和授权保持为平台基础设施。详细维护约定见 [运行依赖说明](runtime-dependencies.md)。
+
+## 选区读取（0.12.0）
+
+`internal/selection` 通过系统辅助功能接口获取当前选区；`desktop.Ports.ReadSelection` 注入该能力。`TranslateSelection` 在后台先读、再通过 Window.Update 显示小窗并进入原有翻译链路；代次和 context 隔离取消/迟到结果。普通粘贴仅作为编辑器动作，宿主不再订阅剪贴板变化。平台约束见 [取词维护文档](selection-translation.md)。

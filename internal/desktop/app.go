@@ -23,22 +23,40 @@ import (
 
 // Ports isolates OS operations and the event-loop dispatcher for deterministic tests.
 type Ports struct {
-	CaptureArea     func(context.Context) (image.Image, error)
-	Plugins         *plugin.Manager
-	ChoosePlugin    func() (string, error)
-	Translators     func(config.Config) []domain.Translator
-	Dispatch        func(func())
-	ReadClipboard   func() string
-	WriteClipboard  func(string)
-	ChooseImage     func() (string, error)
-	ApplyConfig     func(config.Config) error
-	ShowPreferences func()
-	ShowTranslator  func()
-	HideTranslator  func()
-	Quit            func()
+	SetTranslationSize    func(int, int)
+	SaveHistoryExport     func(format string) (string, error)
+	OpenBackup            func() (string, error)
+	SaveBackup            func() (string, error)
+	SetRecognitionPinned  func(bool)
+	ShowRecognizer        func()
+	HideRecognizer        func()
+	SetTranslationPinned  func(bool)
+	CancelTranslationBlur func()
+	CheckTray             func(context.Context) string
+	CaptureArea           func(context.Context) (image.Image, error)
+	Plugins               *plugin.Manager
+	ChoosePlugin          func() (string, error)
+	Translators           func(config.Config) []domain.Translator
+	Dispatch              func(func())
+	ReadSelection         func(context.Context) (string, error)
+	ReadClipboard         func() string
+	WriteClipboard        func(string)
+	ChooseImage           func() (string, error)
+	ApplyConfig           func(config.Config) error
+	ShowPreferences       func()
+	ShowTranslator        func()
+	HideTranslator        func()
+	Quit                  func()
 }
 
 type App struct {
+	historyExportBusy                 bool
+	historyExportFormat               string
+	confirmDelete                     string
+	backup                            backupState
+	recognition                       recognitionState
+	trayStatus                        string
+	trayChecking                      bool
 	probe                             serviceProbe
 	probeGeneration                   uint64
 	probeCancel                       context.CancelFunc
@@ -49,11 +67,18 @@ type App struct {
 	pluginEditors                     map[string]*string
 	store                             *storage.Store
 	ports                             Ports
-	ocr                               ocr.Recognizer
+	ocr                               ocr.Recognizer // Optional test adapter; production always resolves plugins.
+	ocrProbe                          ocrProbeState
+	ocrProbeGeneration                uint64
+	ocrProbeCancel                    context.CancelFunc
 	settings                          config.Config
 	draft                             config.Config
 	page                              string
-	translationPage                   string
+	servicePage                       string
+	favoritesOnly                     bool
+	pinned                            bool
+	readingSelection                  bool
+	sourceCollapsed                   bool
 	input                             ui.Handle
 	focusInput                        bool
 	text, source, target              string
@@ -62,8 +87,6 @@ type App struct {
 	search                            string
 	status                            string
 	busy, saving, historyBusy, closed bool
-	watchClipboard                    bool
-	lastClipboard                     string
 	generation                        uint64
 	historyGeneration                 uint64
 	cancel                            context.CancelFunc
@@ -75,16 +98,23 @@ type App struct {
 
 func New(store *storage.Store, cfg config.Config, history []domain.Entry, ports Ports) *App {
 	ctx, stop := context.WithCancel(context.Background())
-	a := &App{store: store, ports: ports, ocr: ocr.Tesseract{}, settings: cfg.Clone(), draft: cfg.Clone(),
-		page: "设置", translationPage: "翻译", source: domain.LanguageName(cfg.Source), target: domain.LanguageName(cfg.Target), selectedProvider: "compatible",
+	a := &App{store: store, ports: ports, settings: cfg.Clone(), draft: cfg.Clone(),
+		historyExportFormat: "JSON", page: "常规设置", servicePage: "翻译服务", source: domain.LanguageName(cfg.Source), target: domain.LanguageName(cfg.Target), selectedProvider: "compatible",
 		history: history, root: ctx, stop: stop, status: "准备就绪"}
 	a.syncPreferences()
 	return a
 }
 
-func (a *App) Close()          { a.closed = true; a.cancelProbe(); a.Cancel(); a.stop() }
+func (a *App) Close() {
+	a.closed = true
+	a.cancelOCRProbe()
+	a.cancelProbe()
+	a.Cancel()
+	a.CancelRecognition()
+	a.stop()
+}
 func (a *App) Notice(s string) { a.status = s }
-func (a *App) ShowSettings()   { a.openPreferences("设置") }
+func (a *App) ShowSettings()   { a.openPreferences("常规设置") }
 
 func (a *App) openPreferences(page string) {
 	a.page = page
@@ -94,7 +124,8 @@ func (a *App) openPreferences(page string) {
 }
 
 func (a *App) ShowTranslation() {
-	a.translationPage = "翻译"
+	a.cancelTranslationBlur()
+	a.sourceCollapsed = false
 	a.focusInput = true
 	if a.ports.ShowTranslator != nil {
 		a.ports.ShowTranslator()
@@ -119,6 +150,7 @@ func (a *App) post(fn func()) {
 }
 
 func (a *App) Cancel() {
+	a.readingSelection = false
 	a.generation++
 	if a.cancel != nil {
 		a.cancel()
@@ -139,7 +171,7 @@ func (a *App) TranslateText(text string) {
 	a.Translate()
 }
 
-func (a *App) Paste(translate bool) {
+func (a *App) Paste() {
 	a.ShowTranslation()
 	if a.ports.ReadClipboard == nil {
 		return
@@ -151,25 +183,9 @@ func (a *App) Paste(translate bool) {
 	}
 	a.sourceChanged()
 	a.text = text
-	if translate {
-		a.Translate()
-	}
-}
-
-func (a *App) ClipboardChanged() {
-	if a.closed || !a.watchClipboard || a.ports.ReadClipboard == nil {
-		return
-	}
-	text := a.ports.ReadClipboard()
-	if text == a.lastClipboard || strings.TrimSpace(text) == "" {
-		return
-	}
-	a.lastClipboard = text
-	a.TranslateText(text)
 }
 
 func (a *App) copy(text string) {
-	a.lastClipboard = text // Our own copies must not retrigger the watcher.
 	if a.ports.WriteClipboard != nil {
 		a.ports.WriteClipboard(text)
 		a.status = "已复制"
@@ -186,6 +202,9 @@ func languageCode(name string) string {
 }
 
 func (a *App) Translate() {
+	if a.backup.restoring {
+		return
+	}
 	r := domain.Request{Text: strings.TrimSpace(a.text), Source: languageCode(a.source), Target: languageCode(a.target)}
 	if err := r.Validate(); err != nil {
 		a.status = err.Error()
@@ -200,7 +219,11 @@ func (a *App) Translate() {
 	a.Cancel()
 	ctx, cancel := context.WithTimeout(a.root, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	a.cancel, a.busy, a.status = cancel, true, "正在翻译…"
+	// Enter reading mode only after a valid request has an enabled service.
+	a.sourceCollapsed = true
+	a.focusInput = false
 	gen := a.generation
+	revision := a.store.Revision()
 	a.results = make([]domain.Result, len(providers))
 	for i, p := range providers {
 		a.results[i] = domain.Result{ProviderID: p.ID(), ProviderName: p.Name()}
@@ -221,7 +244,7 @@ func (a *App) Translate() {
 		})
 		var saveErr error
 		if err == nil && cfg.SaveHistory && ctx.Err() == nil {
-			saveErr = a.store.Add(domain.Entry{ID: rand.Text(), CreatedAt: time.Now(), Request: r, Results: results}, cfg.HistoryLimit)
+			saveErr = a.store.AddIfRevision(domain.Entry{ID: rand.Text(), CreatedAt: time.Now(), Request: r, Results: results}, cfg.HistoryLimit, revision)
 		}
 		a.post(func() {
 			if a.generation != gen {
@@ -266,7 +289,7 @@ func (a *App) loadHistory() {
 }
 
 func (a *App) changeHistory(fn func() error) {
-	if a.historyBusy {
+	if a.historyBusy || a.backup.restoring {
 		return
 	}
 	a.historyBusy = true
@@ -283,15 +306,17 @@ func (a *App) changeHistory(fn func() error) {
 }
 
 func (a *App) saveSettings() {
-	if a.saving {
+	if a.saving || a.backup.restoring {
 		return
 	}
 	cfg := a.draft.Clone()
+	forceSize := a.preferences.WindowSizeEdited
 	if err := cfg.Validate(); err != nil {
 		a.status = err.Error()
 		return
 	}
 	a.cancelProbe()
+	a.cancelOCRProbe()
 	a.saving = true
 	go func() {
 		err := a.validatePlugins(cfg)
@@ -305,48 +330,60 @@ func (a *App) saveSettings() {
 				return
 			}
 			a.sourceChanged()
+			a.CancelRecognition()
+			previous := a.settings.Clone()
 			a.settings = cfg.Clone()
+			a.preferences.WindowSizeEdited = false
 			a.status = "设置已保存"
-			if a.ports.ApplyConfig != nil {
-				if err := a.ports.ApplyConfig(cfg); err != nil {
-					a.status = "设置已保存，桌面集成提示：" + err.Error()
-				}
+			if err := a.applyDesktopSettings(previous, forceSize); err != nil {
+				a.status = "设置已保存，桌面集成提示：" + err.Error()
 			}
 		})
 	}()
 }
 
-func (a *App) recognizeImage() { a.recognize(false, false) }
+func (a *App) RecognizeImage() { a.showRecognition(); a.startRecognition(false, nil) }
 
-func (a *App) Screenshot(translate bool) { a.recognize(true, translate) }
+func (a *App) Screenshot(translate bool) {
+	if translate {
+		a.recognizeTranslation()
+	} else {
+		a.startRecognition(true, nil)
+	}
+}
 
-func (a *App) recognize(screenshot, translate bool) {
+func (a *App) recognizeTranslation() {
+	if a.backup.restoring {
+		return
+	}
 	if a.busy {
 		return
 	}
-	if screenshot && a.ports.CaptureArea == nil || !screenshot && a.ports.ChooseImage == nil {
+	if a.ports.CaptureArea == nil {
 		a.status = "图片获取接口不可用"
 		return
 	}
+	a.cancelTranslationBlur()
 	a.Cancel()
 	a.busy = true
 	a.status = "选择图片…"
 	gen := a.generation
 	cfg := a.settings.Clone()
-	recognizer := a.ocr
-	if cfg.OCRPlugin != "" {
-		recognizer = plugin.Recognizer{Manager: a.ports.Plugins, Ref: cfg.OCRPlugin, Settings: cfg.OCRSettings}
+	recognizer, err := a.ocrEngine(cfg)
+	if err != nil {
+		a.busy = false
+		a.status = err.Error()
+		a.openServices("OCR 服务")
+		return
 	}
-	if screenshot {
-		a.status = "正在获取屏幕，请框选需要识别的区域…"
-	}
+	a.status = "正在获取屏幕，请框选需要识别的区域…"
 	ctx, cancel := context.WithTimeout(a.root, 90*time.Second)
 	a.cancel = cancel
 	go func() {
 		defer cancel()
 		var path string
 		var err error
-		if screenshot {
+		{
 			var img image.Image
 			img, err = a.ports.CaptureArea(ctx)
 			if err == nil {
@@ -356,12 +393,12 @@ func (a *App) recognize(screenshot, translate bool) {
 					defer cleanup()
 				}
 			}
-		} else {
-			path, err = a.ports.ChooseImage()
 		}
 		var text string
 		if err == nil && path != "" && ctx.Err() == nil {
+			ocrDone := capture.TracePhase("ocr")
 			text, err = recognizer.Recognize(ctx, path, cfg.OCRLanguages)
+			ocrDone()
 		}
 		if err == nil {
 			err = ctx.Err()
@@ -373,7 +410,7 @@ func (a *App) recognize(screenshot, translate bool) {
 			a.busy, a.cancel = false, nil
 			if err != nil {
 				a.status = err.Error()
-				if screenshot && !errors.Is(err, capture.ErrCanceled) && !errors.Is(err, context.Canceled) {
+				if !errors.Is(err, capture.ErrCanceled) && !errors.Is(err, context.Canceled) {
 					a.ShowTranslation()
 				}
 				return
@@ -385,9 +422,7 @@ func (a *App) recognize(screenshot, translate bool) {
 			a.text, a.results = text, nil
 			a.ShowTranslation()
 			a.status = "文字识别完成，可编辑后翻译"
-			if translate {
-				a.Translate()
-			}
+			a.Translate()
 		})
 	}()
 }

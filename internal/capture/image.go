@@ -10,6 +10,10 @@ import (
 	"image/png"
 	"math"
 	"os"
+
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 )
 
 var ErrCanceled = errors.New("已取消截图")
@@ -75,12 +79,15 @@ func Crop(img image.Image, s Selection) (image.Image, error) {
 
 // TempPNG returns a private file and an idempotent cleanup function.
 func TempPNG(img image.Image) (string, func(), error) {
+	defer TracePhase("encode-selection-png")()
 	f, err := os.CreateTemp("", "lumin-capture-*.png")
 	if err != nil {
 		return "", func() {}, err
 	}
 	cleanup := func() { _ = os.Remove(f.Name()) }
-	if err := png.Encode(f, img); err != nil {
+	// This file is short lived and local: favor latency over compressed size.
+	encoder := png.Encoder{CompressionLevel: png.BestSpeed}
+	if err := encoder.Encode(f, img); err != nil {
 		_ = f.Close()
 		cleanup()
 		return "", func() {}, err

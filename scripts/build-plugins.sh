@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ $# -eq 1 && "$1" == ppocrv6-tiny ]]; then
+  exec python3 scripts/build-ppocr-plugin.py --target "${GOOS:-$(go env GOOS)}/${GOARCH:-$(go env GOARCH)}"
+fi
 plugin_os="${GOOS:-$(go env GOOS)}"
 plugin_arch="${GOARCH:-$(go env GOARCH)}"
 plugin_stage="$(mktemp -d)"
@@ -8,8 +11,8 @@ trap 'rm -rf "$plugin_stage"' EXIT
 mkdir -p build/plugins
 # The packer executes on the build host even when plugins target another OS.
 env -u GOOS -u GOARCH CGO_ENABLED=0 go build -o "$plugin_stage/pack" ./cmd/lumin-plugin-pack
-sources=(examples/plugins/libretranslate examples/plugins/tesseract plugins/caiyun)
-if [[ $# -gt 1 ]]; then echo "Usage: $0 [libretranslate|tesseract|caiyun]" >&2; exit 2; fi
+sources=(examples/plugins/libretranslate plugins/caiyun)
+if [[ $# -gt 1 ]]; then echo "Usage: $0 [libretranslate|caiyun|ppocrv6-tiny]" >&2; exit 2; fi
 matched=false
 for source in "${sources[@]}"; do
   name="${source##*/}"

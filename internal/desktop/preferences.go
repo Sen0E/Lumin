@@ -10,16 +10,24 @@ import (
 // MyGo NumberInput binds float64, while persisted settings remain validated ints.
 // These editor values live across frames and publish edits through OnChange.
 type preferencesEditor struct {
-	Timeout, History float64
-	Source, Target   string
+	Timeout, History                                     float64
+	WindowWidth, WindowHeight, ResultFont                float64
+	Appearance                                           string
+	AutoHide                                             bool
+	WindowSizeEdited                                     bool
+	Source, Target                                       string
+	InputShortcut, SelectionShortcut, ScreenshotShortcut string
 }
 
 func (a *App) syncPreferences() {
-	a.preferences = preferencesEditor{Timeout: float64(a.draft.TimeoutSeconds), History: float64(a.draft.HistoryLimit), Source: domain.LanguageName(a.draft.Source), Target: domain.LanguageName(a.draft.Target)}
+	w, h := a.draft.TranslationSize()
+	a.preferences = preferencesEditor{WindowWidth: float64(w), WindowHeight: float64(h), ResultFont: float64(a.draft.ResultFontSize()), Appearance: appearanceLabel(a.draft.Appearance), AutoHide: !a.draft.KeepTranslationOnBlur, Timeout: float64(a.draft.TimeoutSeconds), History: float64(a.draft.HistoryLimit), Source: domain.LanguageName(a.draft.Source), Target: domain.LanguageName(a.draft.Target),
+		InputShortcut: shortcutDisplay(a.draft.InputShortcut), SelectionShortcut: shortcutDisplay(a.draft.SelectionShortcut), ScreenshotShortcut: shortcutDisplay(a.draft.ScreenshotShortcut)}
 }
 
 func (a *App) discardSettings() {
 	a.cancelProbe()
+	a.cancelOCRProbe()
 	a.probe = serviceProbe{}
 	a.draft = a.settings.Clone()
 	a.pluginEditors = nil

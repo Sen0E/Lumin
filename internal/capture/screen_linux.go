@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"image"
 	"net/url"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,20 +17,22 @@ import (
 const portalName = "org.freedesktop.portal.Desktop"
 const requestInterface = "org.freedesktop.portal.Request"
 
-// Screen uses the desktop permission portal on both Wayland and X11. A portal
-// denial is final; helpers are only tried when the portal is unavailable.
-func Screen(ctx context.Context) (image.Image, error) {
-	img, err := portalScreen(ctx)
-	if !errors.Is(err, ErrUnavailable) {
-		return img, err
+// Screen uses the desktop permission portal; it never invokes external tools.
+func Screen(ctx context.Context, target DisplayTarget) (image.Image, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return helperScreen(ctx)
+	img, err := portalScreen(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return CropDisplay(img, target), nil
 }
 
 func portalScreen(ctx context.Context) (image.Image, error) {
 	conn, err := dbus.ConnectSessionBus(dbus.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("%w：无法连接会话总线", ErrUnavailable)
+		return nil, fmt.Errorf("%w：无法连接桌面会话总线", ErrUnavailable)
 	}
 	defer conn.Close()
 	options := []dbus.MatchOption{dbus.WithMatchSender(portalName), dbus.WithMatchInterface(requestInterface), dbus.WithMatchMember("Response")}
@@ -54,7 +54,7 @@ func portalScreen(ctx context.Context) (image.Image, error) {
 		if errors.As(err, &busErr) {
 			switch busErr.Name {
 			case "org.freedesktop.DBus.Error.ServiceUnknown", "org.freedesktop.DBus.Error.UnknownMethod", "org.freedesktop.DBus.Error.UnknownInterface", "org.freedesktop.DBus.Error.UnknownObject":
-				return nil, ErrUnavailable
+				return nil, fmt.Errorf("%w：桌面未提供 Screenshot 门户，请检查桌面集成", ErrUnavailable)
 			}
 		}
 		return nil, errors.New("截图门户拒绝请求，请检查桌面截图权限")
@@ -94,7 +94,10 @@ func portalScreen(ctx context.Context) (image.Image, error) {
 			if err != nil {
 				return nil, err
 			}
-			return ReadImage(path)
+			decodeDone := TracePhase("decode-screen")
+			img, err := ReadImage(path)
+			decodeDone()
+			return img, err
 		}
 	}
 }
@@ -105,33 +108,4 @@ func fileURI(raw string) (string, error) {
 		return "", errors.New("截图门户返回的文件地址无效")
 	}
 	return u.Path, nil
-}
-
-func helperScreen(ctx context.Context) (image.Image, error) {
-	dir, err := os.MkdirTemp("", "lumin-screen-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "screen.png")
-	var name string
-	var args []string
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		name = "grim"
-		args = []string{path}
-	} else {
-		name = "maim"
-		args = []string{path}
-	}
-	bin, err := exec.LookPath(name)
-	if err != nil {
-		return nil, fmt.Errorf("%w：请安装并启用桌面 Screenshot 门户；备用截图工具 %s 未安装", ErrUnavailable, name)
-	}
-	if err := exec.CommandContext(ctx, bin, args...).Run(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("%s 截图失败，请检查桌面支持与权限", name)
-	}
-	return ReadImage(path)
 }

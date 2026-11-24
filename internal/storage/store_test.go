@@ -31,7 +31,7 @@ func TestConfigRoundTripAndPermissions(t *testing.T) {
 	if err != nil || got.Providers[0].APIKey != "sensitive" {
 		t.Fatalf("%+v %v", got, err)
 	}
-	info, err := os.Stat(filepath.Join(s.dir, "config.json"))
+	info, err := os.Stat(filepath.Join(s.dir, "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

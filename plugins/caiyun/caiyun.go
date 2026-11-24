@@ -48,7 +48,7 @@ type translationRequest struct {
 }
 
 // Match the upstream language table, including its zh_cn/zh_tw aliases.
-// Traditional Chinese maps to zh, as in Pot; this does not promise zh-TW output.
+// Traditional Chinese maps to zh, as in the upstream client; this does not promise zh-TW output.
 func language(code string, target bool) (string, error) {
 	switch code {
 	case "zh", "zh-TW", "zh_cn", "zh_tw":

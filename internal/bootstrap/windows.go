@@ -11,10 +11,11 @@ type residentWindow interface {
 }
 
 type windowSet struct {
-	preferences, translator residentWindow
-	quitting, capturing     bool
-	restorePreferences      bool
-	restoreTranslator       bool
+	preferences, translator, recognizer residentWindow
+	quitting, capturing                 bool
+	restorePreferences                  bool
+	restoreTranslator                   bool
+	restoreRecognizer                   bool
 }
 
 func (w *windowSet) show(target residentWindow) {
@@ -24,6 +25,8 @@ func (w *windowSet) show(target residentWindow) {
 	if w.capturing {
 		if target == w.preferences {
 			w.restorePreferences = true
+		} else if target == w.recognizer {
+			w.restoreRecognizer = true
 		} else {
 			w.restoreTranslator = true
 		}
@@ -41,6 +44,8 @@ func (w *windowSet) hideOnClose(target residentWindow) bool {
 	}
 	if target == w.preferences {
 		w.restorePreferences = false
+	} else if target == w.recognizer {
+		w.restoreRecognizer = false
 	} else {
 		w.restoreTranslator = false
 	}
@@ -48,15 +53,20 @@ func (w *windowSet) hideOnClose(target residentWindow) bool {
 	return true
 }
 
-func (w *windowSet) beginCapture() {
+func (w *windowSet) beginCapture() bool {
 	if w.quitting {
-		return
+		return false
 	}
 	w.capturing = true
 	w.restorePreferences = w.preferences.IsVisible()
 	w.restoreTranslator = w.translator.IsVisible()
+	if w.recognizer != nil {
+		w.restoreRecognizer = w.recognizer.IsVisible()
+		w.recognizer.Hide()
+	}
 	w.preferences.Hide()
 	w.translator.Hide()
+	return w.restorePreferences || w.restoreTranslator || w.restoreRecognizer
 }
 
 func (w *windowSet) endCapture() {
@@ -71,5 +81,17 @@ func (w *windowSet) endCapture() {
 	if w.restoreTranslator {
 		w.translator.ShowInactive()
 	}
-	w.restorePreferences, w.restoreTranslator = false, false
+	if w.restoreRecognizer && w.recognizer != nil {
+		w.recognizer.ShowInactive()
+	}
+	w.restorePreferences, w.restoreTranslator, w.restoreRecognizer = false, false, false
+}
+
+// Ignore focus transitions caused by capture surfaces, quit or already-hidden
+// windows. The desktop owns pin/auto-hide preferences and cancellation.
+func (w *windowSet) translationLostFocus(focused bool, dismiss func()) {
+	if focused || w.capturing || w.quitting || w.translator == nil || !w.translator.IsVisible() {
+		return
+	}
+	dismiss()
 }

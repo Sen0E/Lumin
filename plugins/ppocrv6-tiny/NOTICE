@@ -1,0 +1,20 @@
+PP-OCRv6 tiny Lumin plugin 1.0.0
+
+Models: PP-OCRv6 tiny detection and recognition, PaddleOCR/Baidu contributors.
+ONNX artifacts: RapidAI/RapidOCR registry v3.10.0 (Apache-2.0).
+The character dictionary is extracted, unchanged, from the recognition ONNX
+metadata. Model/runtime URLs and SHA-256 values are in assets.lock.json.
+https://github.com/PaddlePaddle/PaddleOCR
+https://github.com/RapidAI/RapidOCR/blob/main/python/MODEL_LICENSES.md
+
+Inference library: RapidAI/RapidOCRLite 5.0.0a16 (Apache-2.0), unmodified SDK.
+https://github.com/RapidAI/RapidOCRLite/releases/tag/v5.0.0a16
+This is a specialized native ONNX interpreter, NOT ONNX Runtime. Its release
+is a prerelease. Only PP-OCRv6 tiny CPU inference is enabled by this adapter.
+No Indra model weights are distributed; the SDK's additional license notice
+is preserved in licenses/ for completeness.
+
+Adapter: Lumin Go JSON-stdio plugin. Calls the SDK's stable C ABI through
+purego; image decoding uses Go and golang.org/x/image. Linked dependency
+license texts and the exact native ABI header are included in the package.
+No Python, PaddlePaddle, OpenCV, Tesseract, or runtime downloads are used.

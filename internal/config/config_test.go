@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestValidation(t *testing.T) {
 	for _, tc := range []struct {
@@ -67,5 +70,66 @@ func TestPluginConfigAndNestedClone(t *testing.T) {
 	draft.Providers[0].Plugin = "../unsafe@1.0.0"
 	if err := draft.Validate(); err == nil {
 		t.Fatal("invalid plugin ref accepted")
+	}
+}
+
+func TestPluginOCRNeedsNoSystemLanguageConfiguration(t *testing.T) {
+	c := Default()
+	if c.OCRLanguages != "" {
+		t.Fatal("new config contains system OCR languages")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.OCRLanguages = "eng+chi_sim" // Legacy field still loads; it is not a fallback switch.
+	c.OCRDisabled = true
+	if err := c.Validate(); err != nil {
+		t.Fatal("legacy OCR compatibility lost", err)
+	}
+}
+
+func TestSelectionShortcutPreservesV1SavedKey(t *testing.T) {
+	c := Default()
+	if err := json.Unmarshal([]byte(`{"clipboard_shortcut":"Ctrl+Alt+Y"}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.SelectionShortcut != "Ctrl+Alt+Y" {
+		t.Fatal("legacy binding lost")
+	}
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err = json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["clipboard_shortcut"] != "Ctrl+Alt+Y" {
+		t.Fatal("v1 backup compatibility changed")
+	}
+	if err = json.Unmarshal([]byte(`{"clipboard_shortcut":""}`), &c); err != nil || c.SelectionShortcut != "" {
+		t.Fatal("disabled shortcut re-enabled")
+	}
+}
+
+func TestDisplayPreferencesLegacyDefaultsAndBounds(t *testing.T) {
+	c := Default()
+	c.Appearance = ""
+	c.TranslationWidth = 0
+	c.TranslationHeight = 0
+	c.TranslationFontSize = 0
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	w, h := c.TranslationSize()
+	if w != 350 || h != 420 || c.ResultFontSize() != 16 || c.KeepTranslationOnBlur {
+		t.Fatal("legacy defaults changed")
+	}
+	for _, change := range []func(*Config){func(c *Config) { c.Appearance = "invalid" }, func(c *Config) { c.TranslationWidth = 319 }, func(c *Config) { c.TranslationHeight = 359 }, func(c *Config) { c.TranslationFontSize = 25 }} {
+		bad := c.Clone()
+		change(&bad)
+		if bad.Validate() == nil {
+			t.Fatal("invalid display preference accepted")
+		}
 	}
 }
