@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag, e.g. v0.13.1 (must match mygo.json)'
+        description: 'Existing version tag, e.g. v0.13.2 (must match mygo.json)'
         required: true
         type: string
 
@@ -76,9 +76,6 @@ jobs:
           - runner: windows-2025
             target: windows/amd64
             artifact: windows-amd64
-          - runner: macos-15
-            target: darwin/arm64
-            artifact: darwin-arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
@@ -100,18 +97,19 @@ jobs:
         env:
           RELEASE_TARGET: ${{ matrix.target }}
         run: ./scripts/build-release.sh "$RELEASE_TARGET"
-      - name: Verify macOS app signature and disk image
-        if: runner.os == 'macOS'
-        run: |
-          codesign --verify --deep --strict build/darwin-arm64/Lumin.app
-          hdiutil verify build/darwin-arm64/*.dmg
-      - name: Run real bundled OCR and plugin protocol tests
+      - name: Test release tooling and both native plugins
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-          LUMIN_PPOCR_PACKAGE: ${{ github.workspace }}/resources/${{ matrix.artifact }}/bundled-ocr.luminext
         run: |
           caiyun_ref="$(python scripts/release.py plugin-ref --plugin caiyun)"
-          export LUMIN_TEST_CAIYUN_PACKAGE="$GITHUB_WORKSPACE/build/plugins/$caiyun_ref-${RELEASE_TARGET/\//-}.luminext"
+          host_target="$(go env GOHOSTOS)/$(go env GOHOSTARCH)"
+          if [[ "$host_target" == "$RELEASE_TARGET" ]]; then
+            export LUMIN_PPOCR_PACKAGE="$GITHUB_WORKSPACE/resources/${RELEASE_TARGET/\//-}/bundled-ocr.luminext"
+            export LUMIN_TEST_CAIYUN_PACKAGE="$GITHUB_WORKSPACE/build/plugins/$caiyun_ref-${RELEASE_TARGET/\//-}.luminext"
+          else
+            echo "Unsupported host/target test combination: $host_target -> $RELEASE_TARGET" >&2
+            exit 1
+          fi
           python -m unittest discover -s scripts -p 'test_*.py' -v
           go test ./cmd/lumin-plugin-pack ./internal/ocrsetup ./plugins/ppocrv6-tiny ./internal/plugin -count=1
           python scripts/release.py collect --target "$RELEASE_TARGET"
@@ -144,7 +142,8 @@ jobs:
           merge-multiple: true
           path: release
       - name: Check complete asset set and generate checksums
-        run: python scripts/release.py finalize --notes "$RUNNER_TEMP/release-notes.md"
+        run: |
+          python scripts/release.py finalize --notes "$RUNNER_TEMP/release-notes.md"
       - name: Publish complete GitHub Release
         run: |
           set -euo pipefail

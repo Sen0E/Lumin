@@ -53,11 +53,12 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release.metadata(self.root, 'v1.2.3')
 
-    def test_finalize_requires_all_platforms_and_both_plugins(self):
+    def test_finalize_requires_linux_windows_and_both_plugins(self):
         output = self.root / 'release'
         output.mkdir()
         names = [name for target in release.TARGETS for name in release.installer_assets('1.2.3', target) + release.plugin_assets(self.root, target)]
-        self.assertEqual(len(names), 12)
+        self.assertEqual(release.TARGETS, ('linux/amd64', 'windows/amd64'))
+        self.assertEqual(len(names), 9)
         for name in names[:-1]:
             (output / name).write_bytes(name.encode())
         notes = self.root / 'notes.md'
@@ -65,10 +66,11 @@ class ReleaseTests(unittest.TestCase):
             release.finalize(self.root, notes)
         (output / names[-1]).write_bytes(b'plugin')
         release.finalize(self.root, notes)
-        self.assertEqual(len((output / 'SHA256SUMS').read_text(encoding='utf-8').splitlines()), 12)
+        self.assertEqual(len((output / 'SHA256SUMS').read_text(encoding='utf-8').splitlines()), 9)
         self.assertIn('Fixed a bug.', notes.read_text(encoding='utf-8'))
         self.assertNotIn('Old notes.', notes.read_text(encoding='utf-8'))
-        (output / 'stale-version.exe').write_bytes(b'old')
+        self.assertNotIn('macOS', notes.read_text(encoding='utf-8'))
+        (output / 'lumin-1.2.3-macos-arm64.dmg').write_bytes(b'old')
         with self.assertRaises(ValueError):
             release.finalize(self.root, notes)
 

@@ -11,7 +11,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = ('linux/amd64', 'windows/amd64', 'darwin/arm64')
+TARGETS = ('linux/amd64', 'windows/amd64')
 BUNDLE_IDS = {'bundled-ocr.luminext': 'lumin.ppocrv6-tiny', 'bundled-caiyun.luminext': 'lumin.caiyun'}
 BUNDLES = tuple(BUNDLE_IDS)
 
@@ -40,7 +40,6 @@ def installer_assets(v, target):
     return {
         'linux/amd64': [f'lumin-{v}-linux-amd64.tar.gz', f'lumin_{deb_version}_amd64.deb', f'lumin-{rpm_version}-1.x86_64.rpm'],
         'windows/amd64': [f'lumin-setup-{v}-amd64.exe', f'lumin-{v}-windows-amd64.zip'],
-        'darwin/arm64': [f'lumin-{v}-macos-arm64.dmg'],
     }[target]
 
 
@@ -88,12 +87,6 @@ def collect(root, target):
                     raise ValueError(f'missing portable file: {source}')
                 archive.write(source, 'Lumin/' + name)
         copy_required(platform / f'lumin-setup-{v}-amd64.exe', output / f'lumin-setup-{v}-amd64.exe')
-    elif target == 'darwin/arm64':
-        app_resources = platform / 'Lumin.app/Contents/Resources'
-        for name in BUNDLES:
-            if not (app_resources / name).is_file():
-                raise ValueError(f'macOS app lacks {name}')
-        copy_required(platform / f'lumin-{v}-arm64.dmg', output / f'lumin-{v}-macos-arm64.dmg')
     else:
         import tarfile
         with tarfile.open(platform / f'lumin-{v}-linux-amd64.tar.gz') as archive:
@@ -125,7 +118,7 @@ def finalize(root, notes):
     changelog = (root / 'CHANGELOG.md').read_text(encoding='utf-8')
     match = re.search(rf'^## {re.escape(v)}(?:\s|$).*?\n(.*?)(?=^## |\Z)', changelog, re.M | re.S)
     body = match.group(1).strip() if match else f'Lumin {v}'
-    body += '''\n\n## 安装包与插件\n\n- Linux x64：DEB、RPM、tar.gz。\n- Windows x64：安装程序与便携 ZIP。\n- macOS Apple Silicon：DMG（macOS 14+）。\n- 各平台安装包均附带彩云小译与 PP-OCRv6 tiny 插件，同时提供独立 .luminext 下载。离线 OCR 首次启动自动配置；彩云需主动导入/配置并启用。\n- SHA256SUMS 用于校验下载文件。\n\nmacOS 包使用 ad-hoc 本地签名，未做 Developer ID 签名和 Apple 公证；Windows 安装程序未做代码签名，系统可能提示验证发布者。\n'''
+    body += '''\n\n## 安装包与插件\n\n- Linux x64：DEB、RPM、tar.gz。\n- Windows x64：安装程序与便携 ZIP。\n- 各平台安装包均附带彩云小译与 PP-OCRv6 tiny 插件，同时提供独立 .luminext 下载。离线 OCR 首次启动自动配置；彩云需主动导入/配置并启用。\n- SHA256SUMS 用于校验下载文件。\n\nWindows 安装程序未做代码签名，系统可能提示验证发布者。\n'''
     notes.write_text(body + '\n', encoding='utf-8')
 
 

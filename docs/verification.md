@@ -285,3 +285,9 @@ go test ./plugins/ppocrv6-tiny -v -count=1
 - 本地复现「上层存储目录为符号链接时正常插件无法执行」：修复前新增回归报「插件入口不能包含符号链接」，修复后通过。管理器创建时解析存储根目录；额外验证已安装插件内部的链接入口和链接 bin 目录仍被拒绝。
 - 关闭 Python UTF-8 模式、启用默认编码警告并将其升级为错误后，9 项 Python 测试通过；覆盖中文清单与实际 plugin-ref CLI。全量 CGO_ENABLED=0 Go 测试、Go vet、MyGo vet、真实随包 OCR 与彩云包测试、工作流 YAML/Bash 语法和 git diff --check 通过。
 - internal/plugin 的 Windows amd64 和 macOS arm64 测试二进制交叉编译通过；原生运行与完整安装包构建仍需 GitHub runner 复验，不能用本地模拟与交叉编译替代。
+
+## 仅发布 Linux、Windows（2026-11-25）
+
+- 按当前发布范围移除 macOS 构建矩阵、runner 选择及交叉构建验证步骤。保留 Linux、Windows 的真实随包 OCR、彩云协议测试。
+- 发布脚本要求 5 个应用包、4 个独立插件包，额外生成 SHA256SUMS；回归检查缺少插件、混入 macOS DMG 或旧资源时拒绝发布，生成说明不再列出 macOS 安装包。
+- 本地通过 9 项 Python 发布工具测试、工作流 YAML 与两平台矩阵断言、全部 Bash 步骤语法检查及 git diff --check。尚未执行 GitHub 托管 runner 的本轮安装包构建。

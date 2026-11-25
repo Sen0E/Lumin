@@ -2,7 +2,7 @@
 
 基于 Go + MyGo 的独立原生桌面翻译工具。窗口使用 MyGo `ui`，无需 React、Node、Tauri 或 WebView。
 
-当前版本是 **0.13.2**。后续以现有体验、性能和稳定性为重点；详细状态见 [功能清单](docs/features.md)。
+当前版本是 **0.13.3**。后续以现有体验、性能和稳定性为重点；详细状态见 [功能清单](docs/features.md)。
 
 ## 已实现
 
@@ -60,7 +60,7 @@ DeepL 免费 API 使用 `https://api-free.deepl.com/v2/translate`；其他账户
 
 Wayland 的全局快捷键依赖桌面门户及应用桌面条目，通常需要安装打包后的应用并完成桌面授权。取词需要目标应用提供辅助功能接口；窗口内仍可手动粘贴并点击翻译。
 
-Linux/Windows x64 与 macOS Apple Silicon 发布包自带 PP-OCRv6 tiny 离线 OCR 插件，首次启动安装到用户数据目录并设为默认引擎，无需 Python、Tesseract 或额外模型下载。已有引擎选择或主动停用会保留；历史 Tesseract 示例引用会迁移到随包引擎。「服务设置 → OCR 服务」统一展示当前引擎，支持切换插件、编辑参数、停用及测试当前草稿。源码运行若没有随包资源，请先手动安装 `.luminext`，应用不会调用系统 OCR 回退。截图权限与多屏行为见 [截图说明](docs/screenshots.md)。
+Linux/Windows x64 发布包自带 PP-OCRv6 tiny 离线 OCR 插件，首次启动安装到用户数据目录并设为默认引擎，无需 Python、Tesseract 或额外模型下载。已有引擎选择或主动停用会保留；历史 Tesseract 示例引用会迁移到随包引擎。「服务设置 → OCR 服务」统一展示当前引擎，支持切换插件、编辑参数、停用及测试当前草稿。源码运行若没有随包资源，请先手动安装 `.luminext`，应用不会调用系统 OCR 回退。截图权限与多屏行为见 [截图说明](docs/screenshots.md)。
 
 「服务设置 → 插件」页面安装 `.luminext` 后，添加翻译服务或选择用于 OCR，再配置并保存。插件协议与示例见 [插件开发文档](docs/plugins.md)。原生插件以当前用户权限运行，仅启用可信来源。
 
@@ -118,7 +118,7 @@ Linux 产物在 `build/linux-amd64/`。交叉编译及发布验收见 [开发手
 
 ### 发布包与默认 OCR
 
-使用 `make build` 或 `scripts/build-release.sh linux/amd64`；Windows 使用 `scripts/build-release.sh windows/amd64`，macOS Apple Silicon 使用 `scripts/build-release.sh darwin/arm64`。脚本构建彩云翻译与固定版本的 OCR 两个插件，放入 MyGo 平台资源目录后打包。首次构建需下载已锁定的模型和运行库，运行安装包不联网下载模型。直接执行 `go tool mygo build` 不负责准备缺失的 OCR 资源；macOS 发布要求在 macOS 构建机上生成 DMG，最低系统版本为 14.0。详见 [OCR 维护说明](docs/ocr.md)。
+使用 `make build` 或 `scripts/build-release.sh linux/amd64`；Windows 使用 `scripts/build-release.sh windows/amd64`。脚本构建彩云翻译与固定版本的 OCR 两个插件，放入 MyGo 平台资源目录后打包。首次构建需下载已锁定的模型和运行库，运行安装包不联网下载模型。直接执行 `go tool mygo build` 不负责准备缺失的 OCR 资源。详见 [OCR 维护说明](docs/ocr.md)。
 
 截图框选采用无边框全屏画布，左键拖拽后松开即可识别，右键或 Esc 取消；无需点击确认按钮。尺寸提示浮在截图上，不占用顶部空间。误点或小于 2×2 原图像素的区域不提交，可直接重选。
 
@@ -130,4 +130,6 @@ Linux 产物在 `build/linux-amd64/`。交叉编译及发布验收见 [开发手
 
 ## GitHub 自动发布
 
-已配置 `.github/workflows/release.yml`。推送与 `mygo.json` 版本一致的 `v` 标签后，自动测试并构建 Linux x64、Windows x64、macOS Apple Silicon 三个平台；全部成功后发布 GitHub Release。安装包均附带彩云翻译与 PP-OCRv6 tiny 两个插件，也单独提供六个 `.luminext` 插件包及 SHA256SUMS。操作、签名限制及失败重跑见 [发布说明](docs/publishing.md#github-actions-自动发布)。
+已配置 `.github/workflows/release.yml`。推送与 `mygo.json` 版本一致的 `v` 标签后，自动测试并构建 Linux x64、Windows x64 两个平台；全部成功后发布 GitHub Release。安装包均附带彩云翻译与 PP-OCRv6 tiny 两个插件，也单独提供四个 `.luminext` 插件包及 SHA256SUMS。操作、签名限制及失败重跑见 [发布说明](docs/publishing.md#github-actions-自动发布)。
+
+自动发布仅构建 Linux 和 Windows，不再申请 macOS runner。源码中的 macOS 平台适配保留。
